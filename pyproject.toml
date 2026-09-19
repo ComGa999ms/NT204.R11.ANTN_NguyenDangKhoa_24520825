@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nt204-ids-packet-parser"
+version = "0.1.0"
+description = "Packet capture and parsing pipeline for an educational IDS"
+requires-python = ">=3.10"
+dependencies = [
+    "scapy>=2.5,<3",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8,<10",
+]
+
+[project.scripts]
+ids-parser = "ids_parser.cli:entrypoint"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
