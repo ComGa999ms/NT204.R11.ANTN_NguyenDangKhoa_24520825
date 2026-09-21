@@ -8,6 +8,8 @@ from threading import Lock
 from typing import Any
 
 from .models import CaptureContext, NormalizedIDSEvent
+from .parsers.network import parse_ipv4
+from .parsers.transport import empty_payload, parse_transport
 
 
 EventSink = Callable[[dict[str, Any]], None]
@@ -16,8 +18,8 @@ EventSink = Callable[[dict[str, Any]], None]
 class PacketPipeline:
     """Convert raw packets to normalized events and send them to a sink.
 
-    Protocol parsing will be added behind ``process_packet``. Capture sources
-    intentionally know nothing about individual protocol parsers.
+    Capture sources intentionally know nothing about individual protocol
+    parsers. IPv4, TCP, and UDP parsing all happens behind ``process_packet``.
     """
 
     def __init__(self, sink: EventSink | None = None) -> None:
@@ -59,16 +61,33 @@ class PacketPipeline:
         packet_length, length_errors = self._packet_length(packet)
         errors = timestamp_errors + length_errors
 
+        network: dict[str, Any] | None = None
+        transport: dict[str, Any] | None = None
+        payload = empty_payload()
+
+        try:
+            network = parse_ipv4(packet)
+            if network is not None:
+                transport, payload = parse_transport(packet)
+        except Exception as error:
+            errors.append(f"Protocol parsing failed: {type(error).__name__}: {error}")
+
+        status = "parsed" if network is not None and transport is not None else "partial"
+        if errors and network is None and packet_length == 0:
+            status = "error"
+
         event = NormalizedIDSEvent(
             packet_id=self._next_packet_id(),
             timestamp=timestamp,
             capture={"mode": context.mode, "source": context.source},
             packet_length=packet_length,
-            status="partial" if errors else "captured",
+            network=network,
+            transport=transport,
+            payload=payload,
+            status=status,
             errors=errors,
         ).to_dict()
 
         if self._sink is not None:
             self._sink(event)
         return event
-

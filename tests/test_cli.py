@@ -43,4 +43,6 @@ def test_pcap_cli_writes_one_json_object_per_packet(tmp_path: Path) -> None:
     events = [json.loads(line) for line in lines]
     assert [event["packet_id"] for event in events] == [1, 2]
     assert all(event["capture"]["mode"] == "pcap" for event in events)
-
+    assert all(event["network"]["protocol"] == "IPv4" for event in events)
+    assert all(event["transport"]["protocol"] == "TCP" for event in events)
+    assert all(event["status"] == "parsed" for event in events)

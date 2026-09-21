@@ -23,6 +23,11 @@ def test_pipeline_assigns_ids_and_forwards_events() -> None:
     assert first_event["timestamp"] == "2023-11-14T22:13:20.000000Z"
     assert first_event["packet_length"] == len(bytes(first_packet))
     assert first_event["capture"] == {"mode": "pcap", "source": "sample.pcap"}
+    assert first_event["network"]["source_ip"] == "10.0.0.1"
+    assert first_event["network"]["destination_ip"] == "10.0.0.2"
+    assert first_event["transport"]["protocol"] == "TCP"
+    assert first_event["transport"]["flags"]["syn"] is True
+    assert first_event["status"] == "parsed"
     assert written_events == [first_event, second_event]
 
 
@@ -38,6 +43,5 @@ def test_pipeline_keeps_running_when_base_metadata_is_missing() -> None:
     )
 
     assert event["packet_length"] == 0
-    assert event["status"] == "partial"
+    assert event["status"] == "error"
     assert len(event["errors"]) == 2
-
