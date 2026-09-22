@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 
 def empty_payload() -> dict[str, Any]:
@@ -22,3 +22,16 @@ def normalize_payload(payload: bytes) -> dict[str, Any]:
         encoding = "hex"
     return {"length": len(payload), "encoding": encoding, "data": data}
 
+
+def payload_to_bytes(payload: Mapping[str, Any]) -> bytes:
+    """Recover the exact bytes represented by a normalized payload."""
+
+    data = payload.get("data")
+    if data is None:
+        return b""
+    encoding = payload.get("encoding")
+    if encoding == "utf-8":
+        return str(data).encode("utf-8")
+    if encoding == "hex":
+        return bytes.fromhex(str(data))
+    raise ValueError(f"Unsupported payload encoding: {encoding}")
