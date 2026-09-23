@@ -12,24 +12,27 @@ REQUEST_LINE = re.compile(rb"^([A-Z][A-Z0-9-]*) ([^\r\n ]+) (HTTP/1\.[01])$")
 RESPONSE_LINE = re.compile(rb"^(HTTP/1\.[01]) ([1-5][0-9]{2})(?: (.*))?$")
 
 
-def _split_message(raw: bytes) -> tuple[list[bytes], bytes, bool]:
+def _split_message(raw: bytes) -> tuple[list[bytes], bytes, bool, int]:
     if b"\r\n\r\n" in raw:
         header_block, body = raw.split(b"\r\n\r\n", 1)
         lines = header_block.split(b"\r\n")
         headers_complete = True
+        body_offset = len(header_block) + 4
     elif b"\n\n" in raw:
         header_block, body = raw.split(b"\n\n", 1)
         lines = [line.rstrip(b"\r") for line in header_block.split(b"\n")]
         headers_complete = True
+        body_offset = len(header_block) + 2
     else:
         body = b""
         lines = [line.rstrip(b"\r") for line in raw.split(b"\n")]
         if lines and lines[-1] == b"":
             lines.pop()
         headers_complete = False
+        body_offset = len(raw)
     if not lines or not lines[0]:
         raise ValueError("HTTP start line is missing")
-    return lines, body, headers_complete
+    return lines, body, headers_complete, body_offset
 
 
 def _parse_headers(lines: list[bytes]) -> dict[str, list[str]]:
@@ -53,13 +56,9 @@ def _first_header(headers: dict[str, list[str]], name: str) -> str | None:
 
 
 def parse_http(raw: bytes) -> dict[str, Any]:
-    """Parse an HTTP message wholly present in one TCP segment.
+    """Parse the first HTTP/1.x message in contiguous TCP stream bytes."""
 
-    This parser deliberately does not claim to perform TCP stream reassembly.
-    A declared body longer than the received bytes is marked incomplete.
-    """
-
-    lines, body, headers_complete = _split_message(raw)
+    lines, body, headers_complete, body_offset = _split_message(raw)
     request = REQUEST_LINE.fullmatch(lines[0])
     response = RESPONSE_LINE.fullmatch(lines[0])
     if not request and not response:
@@ -76,13 +75,22 @@ def parse_http(raw: bytes) -> dict[str, Any]:
         if declared_length < 0:
             raise ValueError("Invalid HTTP Content-Length")
 
+    body_complete = declared_length is None or len(body) >= declared_length
+    message_body = body if declared_length is None else body[:declared_length]
+    message_length = (
+        body_offset + (declared_length if declared_length is not None else len(body))
+        if headers_complete and body_complete
+        else len(raw)
+    )
     fields: dict[str, Any] = {
         "headers": headers,
         "content_type": _first_header(headers, "content-type"),
         "content_length": declared_length,
-        "body": normalize_payload(body),
+        "body": normalize_payload(message_body),
         "headers_complete": headers_complete,
-        "body_complete": declared_length is None or len(body) >= declared_length,
+        "body_complete": body_complete,
+        "message_length": message_length,
+        "remaining_bytes": max(0, len(raw) - message_length),
     }
     if request:
         fields.update(
