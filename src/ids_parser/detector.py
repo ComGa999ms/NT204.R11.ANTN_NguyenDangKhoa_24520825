@@ -6,7 +6,9 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from .parsers.dns import is_dns_message
 from .parsers.payload import payload_to_bytes
+from .parsers.smtp import is_smtp_message
 
 
 HTTP_PORTS = frozenset({80, 8000, 8008, 8080, 8081, 8888})
@@ -21,18 +23,25 @@ def detect_application(
     transport: Mapping[str, Any] | None,
     payload: Mapping[str, Any],
 ) -> str:
-    """Identify HTTP/1.x without requiring a standard port.
+    """Identify supported application protocols from payload and port hints.
 
-    A known method or response prefix works on any TCP port. On common HTTP
-    ports, a syntactically valid request line with an extension method is also
-    accepted. Arbitrary port-80 bytes are not labeled HTTP.
+    Payload signatures work on non-standard ports. A port alone never labels
+    arbitrary bytes as a supported protocol.
     """
 
-    if transport is None or transport.get("protocol") != "TCP":
+    if transport is None:
         return "UNKNOWN"
 
     raw = payload_to_bytes(payload)
     if not raw:
+        return "UNKNOWN"
+
+    transport_protocol = str(transport.get("protocol", ""))
+    if transport_protocol in {"TCP", "UDP"} and is_dns_message(
+        raw, transport_protocol
+    ):
+        return "DNS"
+    if transport_protocol != "TCP":
         return "UNKNOWN"
 
     first_line = raw.split(b"\n", 1)[0].rstrip(b"\r")
@@ -45,5 +54,6 @@ def detect_application(
         ports = {transport.get("source_port"), transport.get("destination_port")}
         if method in HTTP_METHODS or ports & HTTP_PORTS:
             return "HTTP"
+    if is_smtp_message(raw):
+        return "SMTP"
     return "UNKNOWN"
-
