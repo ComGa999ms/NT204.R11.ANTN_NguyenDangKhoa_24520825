@@ -16,13 +16,14 @@ Chức năng hiện tại:
 - Live capture và PCAP import bằng Scapy.
 - Parse IPv4, TCP và UDP.
 - Nhận diện HTTP/1.x bằng payload (kể cả port không tiêu chuẩn) và port gợi ý.
-- Parse HTTP request/response, headers và body trong một TCP packet.
+- TCP stream reassembly có giới hạn bộ nhớ, xử lý out-of-order và retransmission.
+- Parse HTTP request/response, DNS query/response và SMTP command/response.
 - Chuẩn hóa TCP flags, header và payload.
 - Lưu payload dạng UTF-8 hoặc hex nếu không decode được.
 - Không để các module phía sau phụ thuộc trực tiếp vào Scapy packet.
 
 ```text
-Live/PCAP -> PacketPipeline -> IPv4 -> TCP/UDP -> HTTP detector/parser -> JSONL
+Live/PCAP -> IPv4 -> TCP/UDP -> Reassembly -> HTTP/DNS/SMTP -> JSONL
 ```
 
 ## Cài đặt
@@ -97,7 +98,7 @@ Mỗi dòng trong file output là một JSON object độc lập:
 }
 ```
 
-Object thực tế chứa thêm các trường chi tiết của IPv4, TCP hoặc UDP. Với packet HTTP, `application.protocol` là `HTTP` và `application.fields` chứa method/target hoặc status code, headers và body. DNS và SMTP sẽ được bổ sung ở giai đoạn sau. Chương trình hiện phân tích từng TCP packet, chưa ghép lại TCP stream; HTTP message chưa đủ dữ liệu được đánh dấu `partial`.
+Object thực tế chứa thêm các trường chi tiết của IPv4, TCP hoặc UDP. `application.protocol` có thể là `HTTP`, `DNS`, `SMTP` hoặc `UNKNOWN`. Message chưa đủ dữ liệu được giữ trong TCP reassembly buffer và đánh dấu `partial`.
 
 ## Kiểm thử
 
@@ -111,7 +112,7 @@ Chạy chi tiết:
 python -m pytest -v
 ```
 
-Các test hiện bao phủ capture, CLI, IPv4, TCP, UDP, HTTP và pipeline integration.
+Các test hiện bao phủ capture, IPv4, TCP/UDP, stream reassembly, HTTP, DNS, SMTP và pipeline integration.
 
 ## Cấu trúc chính
 
@@ -119,9 +120,10 @@ Các test hiện bao phủ capture, CLI, IPv4, TCP, UDP, HTTP và pipeline integ
 main.py                         CLI entry point
 src/ids_parser/capture.py       Live capture và PCAP reader
 src/ids_parser/pipeline.py      Pipeline xử lý chung
+src/ids_parser/reassembly.py    TCP stream reassembly
 src/ids_parser/models.py        Normalized IDS event
 src/ids_parser/detector.py       Nhận diện application protocol
-src/ids_parser/parsers/         IPv4, TCP, UDP, HTTP và payload parsers
+src/ids_parser/parsers/         IPv4, TCP, UDP, HTTP, DNS và SMTP parsers
 src/ids_parser/writer.py        JSON Lines writer
 tests/                          Automated tests
 TEST/                           Kết quả test case
