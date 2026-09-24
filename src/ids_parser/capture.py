@@ -69,11 +69,22 @@ def read_pcap(
     processed = 0
     try:
         with PcapReader(str(path)) as reader:
-            for packet in reader:
-                pipeline.process_packet(packet, context)
-                processed += 1
-                if count is not None and processed >= count:
-                    break
+            try:
+                for packet in reader:
+                    pipeline.process_packet(packet, context)
+                    processed += 1
+                    if count is not None and processed >= count:
+                        break
+            except (EOFError, Scapy_Exception) as error:
+                # A damaged final record must not discard packets that were
+                # already read successfully. If nothing could be recovered,
+                # keep reporting the file as unreadable to the caller.
+                if processed == 0:
+                    raise CaptureError(
+                        f"Could not read PCAP file '{path}': {error}"
+                    ) from error
+    except CaptureError:
+        raise
     except (EOFError, OSError, Scapy_Exception) as error:
         raise CaptureError(f"Could not read PCAP file '{path}': {error}") from error
     return processed
