@@ -53,7 +53,10 @@ class PacketPipeline:
             timestamp = datetime.fromtimestamp(
                 unix_timestamp, tz=timezone.utc
             ).isoformat(timespec="microseconds")
-        except (AttributeError, OSError, OverflowError, TypeError, ValueError):
+        except Exception:
+            # Raw capture adapters can expose malformed metadata through
+            # library-specific exceptions. Metadata failure must not stop the
+            # packet stream.
             timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
             errors.append("Packet timestamp was unavailable; capture time was used")
         return timestamp.replace("+00:00", "Z"), errors
@@ -62,14 +65,14 @@ class PacketPipeline:
     def _packet_length(packet: Any) -> tuple[int, list[str]]:
         try:
             return len(bytes(packet)), []
-        except (TypeError, ValueError):
+        except Exception:
             return 0, ["Packet length could not be determined"]
 
     @staticmethod
     def _capture_time(packet: Any) -> float:
         try:
             return float(packet.time)
-        except (AttributeError, TypeError, ValueError):
+        except Exception:
             return datetime.now(timezone.utc).timestamp()
 
     @staticmethod
