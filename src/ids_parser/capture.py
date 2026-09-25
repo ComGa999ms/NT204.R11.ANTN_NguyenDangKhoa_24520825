@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +84,12 @@ def read_pcap(
                     raise CaptureError(
                         f"Could not read PCAP file '{path}': {error}"
                     ) from error
+                warnings.warn(
+                    f"PCAP file '{path}' ended with an unreadable record after "
+                    f"{processed} packet(s): {error}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
     except CaptureError:
         raise
     except (EOFError, OSError, Scapy_Exception) as error:
