@@ -39,7 +39,8 @@ def test_truncated_pcap_tail_keeps_already_processed_packets(
     monkeypatch.setattr(capture, "PcapReader", lambda path: ReaderWithTruncatedTail())
     pipeline = RecordingPipeline()
 
-    processed = read_pcap(pcap_path, pipeline)  # type: ignore[arg-type]
+    with pytest.warns(RuntimeWarning, match="unreadable record after 1 packet"):
+        processed = read_pcap(pcap_path, pipeline)  # type: ignore[arg-type]
 
     assert processed == 1
     assert len(pipeline.packets) == 1
