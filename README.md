@@ -131,4 +131,6 @@ TEST/                           Kết quả test case
 
 ## Khai báo sử dụng AI
 
-Cái này sẽ updated sau khi hoàn thành bài tập
+- Công cụ: OpenAI Codex 5.6 Sol.
+- AI hỗ trợ 70%: xây dựng parser, pipeline, TCP reassembly, test case và tài liệu.
+- Sinh viên 30%: phân tích yêu cầu, chạy thử live/PCAP, kiểm tra kết quả, chỉnh sửa, commit và push mã nguồn.
