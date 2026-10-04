@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import quopri
+import re
 from copy import deepcopy
 from html import unescape
 from typing import Any, Mapping
@@ -12,6 +16,8 @@ from .parsers.payload import payload_to_bytes
 
 FORM_URLENCODED = "application/x-www-form-urlencoded"
 HTML_CONTENT_TYPES = {"text/html", "application/xhtml+xml"}
+SUPPORTED_CHARSETS = {"ascii": "ascii", "us-ascii": "ascii", "utf-8": "utf-8"}
+CHARSET_PARAMETER = re.compile(r"(?:^|;)\s*charset\s*=\s*[\"']?([^;\"']+)", re.I)
 
 
 def _media_type(value: Any) -> str:
@@ -30,6 +36,36 @@ def _payload_text(payload: Any) -> str | None:
         return raw.decode("utf-8")
     except (TypeError, UnicodeDecodeError, ValueError):
         return None
+
+
+def _charset(content_type: Any, *, default: str = "utf-8") -> str:
+    if not isinstance(content_type, str):
+        return default
+    match = CHARSET_PARAMETER.search(content_type)
+    return match.group(1).strip().lower() if match else default
+
+
+def _decode_character_data(
+    raw: bytes, charset: str
+) -> tuple[dict[str, Any], str | None]:
+    normalized_charset = SUPPORTED_CHARSETS.get(charset.lower())
+    if normalized_charset is None:
+        return (
+            {"length": len(raw), "encoding": "hex", "data": raw.hex()},
+            f"Unsupported character encoding: {charset}",
+        )
+    try:
+        text = raw.decode(normalized_charset, errors="strict")
+    except UnicodeDecodeError:
+        return (
+            {"length": len(raw), "encoding": "hex", "data": raw.hex()},
+            f"Invalid {normalized_charset} byte sequence",
+        )
+    return {
+        "length": len(raw),
+        "encoding": normalized_charset,
+        "data": text,
+    }, None
 
 
 def decode_http_fields(fields: Mapping[str, Any]) -> dict[str, Any]:
@@ -81,6 +117,21 @@ def decode_http_fields(fields: Mapping[str, Any]) -> dict[str, Any]:
             decoded["decoded_body"] = decoded_body
             if decoded_body != body_text:
                 operations.append("html_entity")
+    elif content_type.startswith("text/"):
+        body = fields.get("body")
+        if isinstance(body, Mapping):
+            try:
+                raw_body = payload_to_bytes(body)
+                decoded_body, error = _decode_character_data(
+                    raw_body, _charset(fields.get("content_type"))
+                )
+                decoded["decoded_body"] = decoded_body
+                if error:
+                    errors.append(error)
+                else:
+                    operations.append(f"character_{decoded_body['encoding']}")
+            except (TypeError, ValueError) as error:
+                errors.append(f"HTTP text body decoding failed: {error}")
 
     decoded["decode_status"] = (
         "partial" if errors else "decoded" if operations else "not_required"
@@ -90,14 +141,58 @@ def decode_http_fields(fields: Mapping[str, Any]) -> dict[str, Any]:
     return decoded
 
 
+def decode_smtp_fields(fields: Mapping[str, Any]) -> dict[str, Any]:
+    """Decode MIME transfer encoding and declared text character encoding."""
+
+    decoded = deepcopy(dict(fields))
+    operations: list[str] = []
+    errors: list[str] = []
+    transfer_encoding = str(fields.get("content_transfer_encoding") or "").lower()
+    body = fields.get("body")
+
+    if not transfer_encoding or not isinstance(body, Mapping):
+        return decoded
+
+    try:
+        raw_body = payload_to_bytes(body)
+        if transfer_encoding == "base64":
+            compact_body = b"".join(raw_body.split())
+            transfer_decoded = base64.b64decode(compact_body, validate=True)
+            operations.append("smtp_base64")
+        elif transfer_encoding in {"quoted-printable", "quopri"}:
+            transfer_decoded = quopri.decodestring(raw_body)
+            operations.append("smtp_quoted_printable")
+        else:
+            transfer_decoded = raw_body
+            errors.append(
+                f"Unsupported MIME transfer encoding: {transfer_encoding}"
+            )
+
+        decoded_body, character_error = _decode_character_data(
+            transfer_decoded, _charset(fields.get("content_type"), default="ascii")
+        )
+        decoded["decoded_body"] = decoded_body
+        if character_error:
+            errors.append(character_error)
+        else:
+            operations.append(f"character_{decoded_body['encoding']}")
+    except (binascii.Error, TypeError, ValueError) as error:
+        errors.append(f"MIME body decoding failed: {error}")
+
+    decoded["decode_status"] = "partial" if errors else "decoded"
+    decoded["decode_operations"] = operations
+    decoded["decode_errors"] = errors
+    return decoded
+
+
 def decode_application(application: Mapping[str, Any]) -> dict[str, Any]:
     """Decode supported application fields while preserving their raw values."""
 
     decoded = deepcopy(dict(application))
-    if str(application.get("protocol", "")).upper() != "HTTP":
-        return decoded
-
+    protocol = str(application.get("protocol", "")).upper()
     fields = application.get("fields")
-    if isinstance(fields, Mapping) and fields:
+    if protocol == "HTTP" and isinstance(fields, Mapping) and fields:
         decoded["fields"] = decode_http_fields(fields)
+    elif protocol == "SMTP" and isinstance(fields, Mapping) and fields:
+        decoded["fields"] = decode_smtp_fields(fields)
     return decoded

@@ -38,6 +38,12 @@ EXPECTED_APPLICATIONS = {
     "malformed-packet": ["HTTP"],
     "t01-http-url-decode": ["HTTP"],
     "t02-html-entity-decode": ["HTTP"],
+    "t03-smtp-mime-decode": ["SMTP", "SMTP"],
+    "t04-invalid-character-decode": ["HTTP", "HTTP"],
+}
+EXPECTED_STATUSES = {
+    "malformed-packet": ["partial"],
+    "t04-invalid-character-decode": ["partial", "parsed"],
 }
 
 
@@ -160,6 +166,42 @@ def build_cases() -> dict[str, list[Packet]]:
                 b"&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;"
             ),
         ],
+        "t03-smtp-mime-decode": [
+            IP(src=client, dst="198.51.100.25")
+            / TCP(sport=40012, dport=2525, seq=100, flags="PA")
+            / Raw(
+                b"MIME-Version: 1.0\r\n"
+                b"Content-Type: text/plain; charset=ascii\r\n"
+                b"Content-Transfer-Encoding: base64\r\n\r\n"
+                b"SGVsbG8gSURT\r\n.\r\n"
+            ),
+            IP(src=client, dst="198.51.100.25")
+            / TCP(sport=40013, dport=2525, seq=100, flags="PA")
+            / Raw(
+                b"MIME-Version: 1.0\r\n"
+                b"Content-Type: text/plain; charset=utf-8\r\n"
+                b"Content-Transfer-Encoding: quoted-printable\r\n\r\n"
+                b"Xin ch=C3=A0o IDS\r\n.\r\n"
+            ),
+        ],
+        "t04-invalid-character-decode": [
+            IP(src=server, dst=client)
+            / TCP(sport=18080, dport=40014, seq=100, flags="PA")
+            / Raw(
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: text/plain; charset=utf-8\r\n"
+                b"Content-Length: 7\r\n\r\n"
+                b"\xffbroken"
+            ),
+            IP(src=server, dst=client)
+            / TCP(sport=18080, dport=40015, seq=100, flags="PA")
+            / Raw(
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: text/plain; charset=utf-8\r\n"
+                b"Content-Length: 13\r\n\r\n"
+                b"still running"
+            ),
+        ],
     }
 
 
@@ -197,9 +239,12 @@ def generate() -> None:
             raise RuntimeError(
                 f"{name}: expected {EXPECTED_APPLICATIONS[name]}, got {applications}"
             )
-        expected_status = "partial" if name == "malformed-packet" else "parsed"
-        if any(event["status"] != expected_status for event in events):
-            raise RuntimeError(f"{name}: unexpected event status")
+        statuses = [event["status"] for event in events]
+        expected_statuses = EXPECTED_STATUSES.get(name, ["parsed"] * len(events))
+        if statuses != expected_statuses:
+            raise RuntimeError(
+                f"{name}: expected status {expected_statuses}, got {statuses}"
+            )
         if name == "t01-http-url-decode":
             fields = events[0]["application"]["fields"]
             if fields["decoded_target"] != "/search?q=' OR 1=1":
@@ -210,6 +255,17 @@ def generate() -> None:
             fields = events[0]["application"]["fields"]
             if fields["decoded_body"] != '<script>alert("x")</script>':
                 raise RuntimeError(f"{name}: HTML entity decoding failed")
+        elif name == "t03-smtp-mime-decode":
+            first_fields = events[0]["application"]["fields"]
+            second_fields = events[1]["application"]["fields"]
+            if first_fields["decoded_body"]["data"] != "Hello IDS":
+                raise RuntimeError(f"{name}: Base64 decoding failed")
+            if second_fields["decoded_body"]["data"] != "Xin chào IDS":
+                raise RuntimeError(f"{name}: quoted-printable decoding failed")
+        elif name == "t04-invalid-character-decode":
+            fields = events[0]["application"]["fields"]
+            if fields["decode_status"] != "partial":
+                raise RuntimeError(f"{name}: invalid UTF-8 was not marked partial")
         print(
             f"{name}: {processed} packet(s), "
             f"status={','.join(event['status'] for event in events)}, "

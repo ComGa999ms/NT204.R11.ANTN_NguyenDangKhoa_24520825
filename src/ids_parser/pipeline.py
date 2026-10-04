@@ -152,6 +152,12 @@ class PacketPipeline:
                     except (UnicodeDecodeError, ValueError) as error:
                         errors.append(f"SMTP parsing failed: {error}")
                 application = decode_application(application)
+                decoded_fields = application.get("fields")
+                if isinstance(decoded_fields, dict):
+                    errors.extend(
+                        f"Application decoding failed: {message}"
+                        for message in decoded_fields.get("decode_errors", [])
+                    )
         except Exception as error:
             errors.append(f"Protocol parsing failed: {type(error).__name__}: {error}")
 
