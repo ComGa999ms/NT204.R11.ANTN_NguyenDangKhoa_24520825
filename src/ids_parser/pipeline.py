@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from threading import Lock
 from typing import Any
 
+from .decoder import decode_application
 from .detector import detect_application
 from .models import CaptureContext, NormalizedIDSEvent
 from .parsers.dns import parse_dns
@@ -150,6 +151,7 @@ class PacketPipeline:
                         application["fields"] = parse_smtp(application_raw)
                     except (UnicodeDecodeError, ValueError) as error:
                         errors.append(f"SMTP parsing failed: {error}")
+                application = decode_application(application)
         except Exception as error:
             errors.append(f"Protocol parsing failed: {type(error).__name__}: {error}")
 

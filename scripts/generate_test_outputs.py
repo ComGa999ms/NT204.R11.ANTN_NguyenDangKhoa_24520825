@@ -36,6 +36,8 @@ EXPECTED_APPLICATIONS = {
     "smtp-response": ["SMTP"],
     "unknown-protocol": ["UNKNOWN"],
     "malformed-packet": ["HTTP"],
+    "t01-http-url-decode": ["HTTP"],
+    "t02-html-entity-decode": ["HTTP"],
 }
 
 
@@ -137,6 +139,27 @@ def build_cases() -> dict[str, list[Packet]]:
             / TCP(sport=40009, dport=18080, seq=100, flags="PA")
             / Raw(b"GET / HTTP/1.1\r\nMalformedHeader\r\n\r\n"),
         ],
+        "t01-http-url-decode": [
+            IP(src=client, dst=server)
+            / TCP(sport=40010, dport=18080, seq=100, flags="PA")
+            / Raw(
+                b"POST /search?q=%27%20OR%201%3D1 HTTP/1.1\r\n"
+                b"Host: example.test\r\n"
+                b"Content-Type: application/x-www-form-urlencoded\r\n"
+                b"Content-Length: 33\r\n\r\n"
+                b"username=admin&query=%27+OR+1%3D1"
+            ),
+        ],
+        "t02-html-entity-decode": [
+            IP(src=server, dst=client)
+            / TCP(sport=18080, dport=40011, seq=100, flags="PA")
+            / Raw(
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: text/html; charset=utf-8\r\n"
+                b"Content-Length: 49\r\n\r\n"
+                b"&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;"
+            ),
+        ],
     }
 
 
@@ -177,6 +200,16 @@ def generate() -> None:
         expected_status = "partial" if name == "malformed-packet" else "parsed"
         if any(event["status"] != expected_status for event in events):
             raise RuntimeError(f"{name}: unexpected event status")
+        if name == "t01-http-url-decode":
+            fields = events[0]["application"]["fields"]
+            if fields["decoded_target"] != "/search?q=' OR 1=1":
+                raise RuntimeError(f"{name}: URL decoding failed")
+            if fields["decoded_form_fields"]["query"] != ["' OR 1=1"]:
+                raise RuntimeError(f"{name}: form decoding failed")
+        elif name == "t02-html-entity-decode":
+            fields = events[0]["application"]["fields"]
+            if fields["decoded_body"] != '<script>alert("x")</script>':
+                raise RuntimeError(f"{name}: HTML entity decoding failed")
         print(
             f"{name}: {processed} packet(s), "
             f"status={','.join(event['status'] for event in events)}, "
