@@ -1,4 +1,4 @@
-"""TCP header and payload parser."""
+"""Bộ phân tích TCP header và payload."""
 
 from __future__ import annotations
 

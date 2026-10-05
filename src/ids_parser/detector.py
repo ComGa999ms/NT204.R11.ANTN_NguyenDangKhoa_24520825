@@ -1,4 +1,4 @@
-"""Application protocol detection using transport hints and payload signatures."""
+"""Nhận diện application protocol bằng payload và port gợi ý."""
 
 from __future__ import annotations
 
@@ -23,10 +23,9 @@ def detect_application(
     transport: Mapping[str, Any] | None,
     payload: Mapping[str, Any],
 ) -> str:
-    """Identify supported application protocols from payload and port hints.
+    """Nhận diện HTTP, DNS, SMTP hoặc UNKNOWN.
 
-    Payload signatures work on non-standard ports. A port alone never labels
-    arbitrary bytes as a supported protocol.
+    Payload là tín hiệu chính. Port chỉ dùng để hỗ trợ.
     """
 
     if transport is None:

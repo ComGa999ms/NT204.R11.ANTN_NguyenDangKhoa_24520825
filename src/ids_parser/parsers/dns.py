@@ -1,4 +1,4 @@
-"""DNS query and response parser for UDP and TCP payloads."""
+"""Bộ phân tích DNS query/response trên UDP hoặc TCP."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def _unwrap(raw: bytes, transport_protocol: str) -> tuple[bytes, int, bool]:
 
 
 def parse_dns(raw: bytes, transport_protocol: str) -> dict[str, Any]:
-    """Parse one complete DNS message from UDP or a TCP length frame."""
+    """Phân tích một DNS message hoàn chỉnh từ UDP hoặc TCP frame."""
 
     message, consumed_bytes, tcp_framed = _unwrap(raw, transport_protocol)
     dns = DNS(message)

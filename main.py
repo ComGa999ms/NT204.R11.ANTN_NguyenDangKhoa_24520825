@@ -1,7 +1,6 @@
-"""Project entry point.
+"""Điểm chạy chính của project.
 
-This small bootstrap keeps ``python main.py`` working without requiring the
-package to be installed first.
+File này giúp chạy ``python main.py`` mà chưa cần cài package.
 """
 
 from __future__ import annotations

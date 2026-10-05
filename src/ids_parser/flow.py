@@ -1,4 +1,4 @@
-"""Bidirectional flow and TCP connection tracking."""
+"""Theo dõi flow hai chiều và trạng thái TCP."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ Endpoint = tuple[str, int]
 
 @dataclass(frozen=True, slots=True)
 class FlowTrackerConfig:
-    """Runtime limits for flow tracking."""
+    """Cấu hình timeout cho flow."""
 
     idle_timeout_seconds: float = 60.0
 
@@ -68,7 +68,7 @@ class _FlowState:
 
 
 class FlowTracker:
-    """Aggregate packets into stable bidirectional flow records."""
+    """Gom packet thành flow hai chiều ổn định."""
 
     def __init__(self, config: FlowTrackerConfig | None = None) -> None:
         self._config = config or FlowTrackerConfig()

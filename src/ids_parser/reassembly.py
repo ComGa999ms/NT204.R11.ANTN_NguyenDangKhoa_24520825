@@ -1,4 +1,4 @@
-"""Bounded, sequence-aware TCP stream reassembly for application parsers."""
+"""Ghép TCP stream theo sequence number cho application parser."""
 
 from __future__ import annotations
 
@@ -46,10 +46,10 @@ class _StreamState:
 
 
 class TCPStreamReassembler:
-    """Reassemble one direction of each IPv4 TCP flow.
+    """Ghép dữ liệu một chiều của từng TCP flow.
 
-    First-seen bytes win when retransmitted data overlaps. State is bounded by
-    flow count, byte count, and inactivity timeout to keep live capture safe.
+    Nếu retransmission bị overlap thì giữ byte thấy trước.
+    Có giới hạn flow, byte và timeout để tránh tốn RAM.
     """
 
     def __init__(
@@ -87,9 +87,9 @@ class TCPStreamReassembler:
     def _insert_first_seen(
         state: _StreamState, sequence: int, data: bytes
     ) -> tuple[bool, bool]:
-        """Insert only byte ranges not already stored.
+        """Chỉ thêm những byte range chưa được lưu.
 
-        Returns ``(retransmission, inserted_any_bytes)``.
+        Trả về ``(retransmission, có_thêm_byte_mới)``.
         """
 
         pieces = [(sequence, data)]
@@ -155,7 +155,7 @@ class TCPStreamReassembler:
         fin: bool = False,
         rst: bool = False,
     ) -> ReassemblyResult:
-        """Add one TCP payload segment and return contiguous stream bytes."""
+        """Thêm một TCP segment và trả về stream liên tục."""
 
         sequence = int(sequence) + (1 if syn else 0)
         with self._lock:
@@ -211,9 +211,8 @@ class TCPStreamReassembler:
             stored_bytes = sum(len(segment) for _, segment in state.segments)
             overflowed = stored_bytes > self.max_stream_bytes
             if overflowed:
-                # Drop old state and retain only the current segment as a safe
-                # new observation point. It may remain UNKNOWN until a new
-                # application message begins.
+                # Buffer quá giới hạn thì bỏ state cũ.
+                # Segment hiện tại được giữ làm điểm quan sát mới.
                 state.segments.clear()
                 state.consumed_until = None
                 if original_data:
@@ -241,7 +240,7 @@ class TCPStreamReassembler:
             return result
 
     def consume(self, flow_key: FlowKey, byte_count: int) -> None:
-        """Discard an application message already emitted by the pipeline."""
+        """Bỏ phần application message đã xuất ra event."""
 
         if byte_count <= 0:
             return

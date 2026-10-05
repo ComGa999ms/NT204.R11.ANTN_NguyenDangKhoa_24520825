@@ -1,4 +1,4 @@
-"""HTTP/1.x request and response parser for one TCP payload."""
+"""Bộ phân tích HTTP/1.x request/response từ TCP payload."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def _first_header(headers: dict[str, list[str]], name: str) -> str | None:
 
 
 def parse_http(raw: bytes) -> dict[str, Any]:
-    """Parse the first HTTP/1.x message in contiguous TCP stream bytes."""
+    """Phân tích HTTP/1.x message đầu tiên trong TCP stream liên tục."""
 
     lines, body, headers_complete, body_offset = _split_message(raw)
     request = REQUEST_LINE.fullmatch(lines[0])

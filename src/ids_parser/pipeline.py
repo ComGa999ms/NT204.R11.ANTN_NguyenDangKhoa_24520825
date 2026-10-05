@@ -1,4 +1,4 @@
-"""Common packet processing pipeline used by live traffic and PCAP files."""
+"""Pipeline xử lý chung cho live traffic và file PCAP."""
 
 from __future__ import annotations
 
@@ -25,11 +25,10 @@ EventSink = Callable[[dict[str, Any]], None]
 
 
 class PacketPipeline:
-    """Convert raw packets to normalized events and send them to a sink.
+    """Chuyển raw packet thành event chuẩn rồi gửi cho sink.
 
-    Capture sources intentionally know nothing about individual protocol
-    parsers. IPv4, TCP, UDP, HTTP, DNS, and SMTP parsing all happens behind
-    ``process_packet``.
+    Nguồn capture không cần biết chi tiết parser.
+    Mọi bước parse đều nằm trong ``process_packet``.
     """
 
     def __init__(
@@ -67,9 +66,8 @@ class PacketPipeline:
                 unix_timestamp, tz=timezone.utc
             ).isoformat(timespec="microseconds")
         except Exception:
-            # Raw capture adapters can expose malformed metadata through
-            # library-specific exceptions. Metadata failure must not stop the
-            # packet stream.
+            # Metadata packet có thể lỗi tùy thư viện capture.
+            # Nếu lỗi thì dùng thời gian hiện tại và tiếp tục xử lý.
             timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
             errors.append("Packet timestamp was unavailable; capture time was used")
         return timestamp.replace("+00:00", "Z"), errors
@@ -102,7 +100,7 @@ class PacketPipeline:
     def process_packet(
         self, packet: Any, context: CaptureContext
     ) -> dict[str, Any]:
-        """Normalize one packet and forward it to the configured sink."""
+        """Xử lý một packet và trả về event chuẩn hóa."""
 
         timestamp, timestamp_errors = self._packet_timestamp(packet)
         packet_length, length_errors = self._packet_length(packet)

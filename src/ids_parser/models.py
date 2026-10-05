@@ -1,4 +1,4 @@
-"""Normalized data models shared by every capture source and parser."""
+"""Các model dữ liệu chuẩn dùng chung trong pipeline."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ EventStatus = Literal["captured", "parsed", "partial", "error"]
 
 @dataclass(frozen=True, slots=True)
 class CaptureContext:
-    """Describes where a packet entered the common parsing pipeline."""
+    """Mô tả packet đến từ live capture hay PCAP."""
 
     mode: CaptureMode
     source: str
@@ -26,11 +26,9 @@ class CaptureContext:
 
 @dataclass(slots=True)
 class NormalizedIDSEvent:
-    """JSON-compatible event consumed by later IDS modules.
+    """Event JSON chuẩn cho các module IDS phía sau.
 
-    Network, transport, and application parsers will populate the layer
-    dictionaries in later tasks. Keeping the keys present from the beginning
-    gives downstream code one stable schema.
+    Luôn giữ đủ key chính để module sau đọc ổn định.
     """
 
     packet_id: int
@@ -61,7 +59,7 @@ class NormalizedIDSEvent:
             raise ValueError(f"Unsupported event status: {self.status}")
 
     def to_dict(self) -> dict[str, Any]:
-        """Return a deep, JSON-compatible dictionary representation."""
+        """Chuyển dataclass thành dict ghi được ra JSON."""
 
         return asdict(self)
 

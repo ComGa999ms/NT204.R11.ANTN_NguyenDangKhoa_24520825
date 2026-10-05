@@ -1,4 +1,4 @@
-"""Command-line interface for packet capture and PCAP import."""
+"""CLI nhận lệnh bắt gói tin hoặc đọc file PCAP."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""JSON Lines output for normalized IDS events."""
+"""Ghi IDS event ra file JSON Lines."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any, TextIO
 
 
 class JSONLinesWriter:
-    """Write exactly one JSON object per line using UTF-8 encoding."""
+    """Ghi đúng một JSON object trên mỗi dòng bằng UTF-8."""
 
     def __init__(self, output_path: str | Path, *, flush: bool = True) -> None:
         self.output_path = Path(output_path)

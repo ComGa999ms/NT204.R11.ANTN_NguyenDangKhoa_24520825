@@ -1,4 +1,4 @@
-"""Preprocessing and validation for normalized IDS events."""
+"""Kiểm tra và chuẩn hóa event sau khi decode."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ UNRESERVED_URI = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class PreprocessConfig:
-    """Controls how malformed or unsupported events are handled."""
+    """Cấu hình cách xử lý event lỗi hoặc chưa hỗ trợ."""
 
     invalid_policy: PreprocessPolicy = "mark"
     unsupported_policy: PreprocessPolicy = "mark"
@@ -52,7 +52,7 @@ class _Issues:
 
 
 class EventPreprocessor:
-    """Validate and normalize one decoded IDS event at a time."""
+    """Kiểm tra và chuẩn hóa từng event đã giải mã."""
 
     def __init__(self, config: PreprocessConfig | None = None) -> None:
         self._config = config or PreprocessConfig()

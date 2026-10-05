@@ -1,4 +1,4 @@
-"""Application-layer decoding performed after protocol parsing."""
+"""Giải mã dữ liệu application sau bước parser."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def _media_type(value: Any) -> str:
 
 
 def _payload_text(payload: Any) -> str | None:
-    """Return UTF-8 text from a normalized payload when it is valid text."""
+    """Lấy text UTF-8 từ payload nếu dữ liệu hợp lệ."""
 
     if not isinstance(payload, Mapping):
         return None
@@ -69,7 +69,7 @@ def _decode_character_data(
 
 
 def decode_http_fields(fields: Mapping[str, Any]) -> dict[str, Any]:
-    """Decode HTTP URI, form data, and HTML text without replacing raw data."""
+    """Giải mã URI, form và HTML nhưng vẫn giữ dữ liệu gốc."""
 
     decoded = deepcopy(dict(fields))
     operations: list[str] = []
@@ -142,7 +142,7 @@ def decode_http_fields(fields: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def decode_smtp_fields(fields: Mapping[str, Any]) -> dict[str, Any]:
-    """Decode MIME transfer encoding and declared text character encoding."""
+    """Giải mã MIME transfer encoding và charset của SMTP."""
 
     decoded = deepcopy(dict(fields))
     operations: list[str] = []
@@ -186,7 +186,7 @@ def decode_smtp_fields(fields: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def decode_application(application: Mapping[str, Any]) -> dict[str, Any]:
-    """Decode supported application fields while preserving their raw values."""
+    """Giải mã field được hỗ trợ nhưng không xóa giá trị gốc."""
 
     decoded = deepcopy(dict(application))
     protocol = str(application.get("protocol", "")).upper()

@@ -1,4 +1,4 @@
-"""Packet input adapters for live interfaces and PCAP files."""
+"""Lấy packet từ live interface hoặc file PCAP."""
 
 from __future__ import annotations
 
@@ -14,11 +14,11 @@ from .pipeline import PacketPipeline
 
 
 class CaptureError(RuntimeError):
-    """A user-facing failure while opening or reading a capture source."""
+    """Lỗi dễ hiểu cho người dùng khi mở nguồn capture."""
 
 
 def list_interfaces() -> list[str]:
-    """Return user-facing interface names in stable, duplicate-free order."""
+    """Trả về danh sách interface, bỏ tên bị trùng."""
 
     try:
         names = (
@@ -31,7 +31,7 @@ def list_interfaces() -> list[str]:
 
 
 def resolve_interface(interface_name: str) -> Any:
-    """Resolve a friendly name or capture identifier to a Scapy interface."""
+    """Tìm interface Scapy từ tên người dùng nhập."""
 
     requested = interface_name.strip().casefold()
     try:
@@ -58,7 +58,7 @@ def read_pcap(
     *,
     count: int | None = None,
 ) -> int:
-    """Stream packets from a PCAP into the shared packet pipeline."""
+    """Đọc từng packet trong PCAP và đưa vào pipeline."""
 
     path = Path(pcap_path).expanduser()
     if not path.exists():
@@ -77,9 +77,8 @@ def read_pcap(
                     if count is not None and processed >= count:
                         break
             except (EOFError, Scapy_Exception) as error:
-                # A damaged final record must not discard packets that were
-                # already read successfully. If nothing could be recovered,
-                # keep reporting the file as unreadable to the caller.
+                # PCAP hỏng ở cuối vẫn giữ các packet đã đọc được.
+                # Nếu chưa đọc được packet nào thì báo lỗi file.
                 if processed == 0:
                     raise CaptureError(
                         f"Could not read PCAP file '{path}': {error}"
@@ -104,7 +103,7 @@ def capture_live(
     count: int | None = None,
     capture_filter: str | None = None,
 ) -> int:
-    """Capture live packets and send each one through the shared pipeline."""
+    """Bắt packet live và đưa từng packet vào pipeline."""
 
     if not interface.strip():
         raise CaptureError("Network interface must not be empty")

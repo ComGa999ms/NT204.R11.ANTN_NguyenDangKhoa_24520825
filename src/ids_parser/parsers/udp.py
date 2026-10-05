@@ -1,4 +1,4 @@
-"""UDP header and payload parser."""
+"""Bộ phân tích UDP header và payload."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Plaintext SMTP command and response parser."""
+"""Bộ phân tích SMTP plaintext command/response."""
 
 from __future__ import annotations
 
@@ -61,8 +61,8 @@ def _parse_mime_headers(raw: bytes) -> tuple[dict[str, list[str]], bytes, int] |
         current_name = name.strip().lower()
         headers.setdefault(current_name, []).append(value.strip())
 
-    # A transfer-encoding header is the required signal for this assignment's
-    # MIME decoder and prevents arbitrary text from being labeled as SMTP.
+    # Header transfer-encoding là dấu hiệu cần có cho MIME decoder.
+    # Nhờ vậy text thường không bị nhận nhầm là SMTP MIME.
     if "content-transfer-encoding" not in headers:
         return None
     return headers, body, body_offset
@@ -111,7 +111,7 @@ def _complete_lines(raw: bytes) -> tuple[list[str], int, bool]:
 
 
 def parse_smtp(raw: bytes) -> dict[str, Any]:
-    """Parse one or more complete SMTP command/response lines."""
+    """Phân tích một hoặc nhiều dòng SMTP command/response hoàn chỉnh."""
 
     mime_message = _parse_mime_message(raw)
     if mime_message is not None:

@@ -1,4 +1,4 @@
-"""Dispatch packets to supported transport-layer parsers."""
+"""Điều phối packet sang bộ phân tích TCP hoặc UDP."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from .udp import parse_udp
 def parse_transport(
     packet: Any,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
-    """Parse a supported transport layer without relying on port numbers."""
+    """Phân tích transport layer mà không phụ thuộc port."""
 
     if not hasattr(packet, "haslayer"):
         return None, empty_payload()

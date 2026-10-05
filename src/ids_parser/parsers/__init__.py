@@ -1,1 +1,1 @@
-"""Protocol parsers used by the shared packet pipeline."""
+"""Các bộ phân tích protocol dùng trong pipeline chung."""

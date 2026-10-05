@@ -1,4 +1,4 @@
-"""Safe normalization helpers for transport payload bytes."""
+"""Hàm chuẩn hóa payload bytes an toàn."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ def empty_payload() -> dict[str, Any]:
 
 
 def normalize_payload(payload: bytes) -> dict[str, Any]:
-    """Represent payload bytes without losing undecodable binary data."""
+    """Biểu diễn payload mà không mất dữ liệu nhị phân."""
 
     if not payload:
         return empty_payload()
@@ -24,7 +24,7 @@ def normalize_payload(payload: bytes) -> dict[str, Any]:
 
 
 def payload_to_bytes(payload: Mapping[str, Any]) -> bytes:
-    """Recover the exact bytes represented by a normalized payload."""
+    """Khôi phục bytes từ payload đã chuẩn hóa."""
 
     data = payload.get("data")
     if data is None:

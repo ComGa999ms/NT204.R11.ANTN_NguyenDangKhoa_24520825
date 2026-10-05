@@ -1,4 +1,4 @@
-"""Network-layer protocol parsers."""
+"""Bộ phân tích cho tầng network."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def _total_length(ip_layer: IP) -> int:
 
 
 def parse_ipv4(packet: Any) -> dict[str, Any] | None:
-    """Return normalized IPv4 fields, or ``None`` for non-IPv4 packets."""
+    """Trả về field IPv4 hoặc ``None`` nếu không phải IPv4."""
 
     if not hasattr(packet, "haslayer") or not packet.haslayer(IP):
         return None
