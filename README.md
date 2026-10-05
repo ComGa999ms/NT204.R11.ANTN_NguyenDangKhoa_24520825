@@ -5,7 +5,7 @@
 - Họ và tên: Nguyễn Đăng Khoa
 - MSSV: 24520825
 - Lớp: NT204.R11.ANTN
-- Bài tập 1 + 2: Packet Capture, Parser, Decoder và Preprocessor cho hệ thống IDS
+- Bài tập 1 + 2: Packet Capture, Parser, Decoder, Preprocessor và Flow Tracker cho hệ thống IDS
 
 ## Giới thiệu
 
@@ -20,12 +20,13 @@ Chức năng hiện tại:
 - Parse HTTP request/response, DNS query/response và SMTP command/response.
 - Decode HTTP URL/form/HTML và SMTP MIME cơ bản.
 - Preprocessor kiểm tra field bắt buộc, chuẩn hóa IP/protocol/domain/header/timestamp và đánh dấu event `valid`, `partial` hoặc `invalid`.
+- Flow Tracker gom packet hai chiều vào cùng `flow_id`, theo dõi TCP state, thống kê packet/byte và timeout flow.
 - Chuẩn hóa TCP flags, header và payload.
 - Lưu payload dạng UTF-8 hoặc hex nếu không decode được.
 - Không để các module phía sau phụ thuộc trực tiếp vào Scapy packet.
 
 ```text
-Live/PCAP -> IPv4 -> TCP/UDP -> Reassembly -> Decoder -> Preprocessor -> JSONL
+Live/PCAP -> IPv4 -> TCP/UDP -> Reassembly -> Decoder -> Preprocessor -> Flow Tracker -> JSONL
 ```
 
 ## Cài đặt
@@ -70,6 +71,12 @@ python main.py --interface "Wi-Fi" --filter "tcp or udp" --count 20 --output TES
 python main.py --pcap challenge.pcap --unsupported-policy skip --invalid-policy mark --output TEST/pcap-capture.jsonl
 ```
 
+Đổi timeout cho flow:
+
+```powershell
+python main.py --pcap challenge.pcap --flow-timeout 30 --output TEST/pcap-capture.jsonl
+```
+
 Xem toàn bộ tùy chọn:
 
 ```powershell
@@ -105,11 +112,20 @@ Mỗi dòng trong file output là một JSON object độc lập:
   "errors": [],
   "preprocess_status": "valid",
   "processing_action": "process",
-  "reason": null
+  "reason": null,
+  "flow": {
+    "flow_id": "e1b7b565a19f6d3e",
+    "protocol": "TCP",
+    "direction": "a_to_b",
+    "packet_count": 1,
+    "byte_count": 40,
+    "tcp_state": "SYN_SENT"
+  },
+  "expired_flows": []
 }
 ```
 
-Object thực tế chứa thêm các trường chi tiết của IPv4, TCP hoặc UDP. `application.protocol` có thể là `HTTP`, `DNS`, `SMTP` hoặc `UNKNOWN`. Message chưa đủ dữ liệu được giữ trong TCP reassembly buffer và đánh dấu `partial`. Preprocessor có thể giữ event lỗi để xem lý do hoặc bỏ qua khi chọn policy `skip`.
+Object thực tế chứa thêm các trường chi tiết của IPv4, TCP hoặc UDP. `application.protocol` có thể là `HTTP`, `DNS`, `SMTP` hoặc `UNKNOWN`. Message chưa đủ dữ liệu được giữ trong TCP reassembly buffer và đánh dấu `partial`. Preprocessor có thể giữ event lỗi để xem lý do hoặc bỏ qua khi chọn policy `skip`. Flow timeout được xuất trong `expired_flows`.
 
 ## Kiểm thử
 
@@ -123,7 +139,7 @@ Chạy chi tiết:
 python -m pytest -v
 ```
 
-Các test hiện bao phủ capture, IPv4, TCP/UDP, stream reassembly, HTTP, DNS, SMTP, decoder, preprocessor và pipeline integration.
+Các test hiện bao phủ capture, IPv4, TCP/UDP, stream reassembly, HTTP, DNS, SMTP, decoder, preprocessor, flow tracker và pipeline integration.
 
 ## Cấu trúc chính
 
@@ -136,6 +152,7 @@ src/ids_parser/models.py        Normalized IDS event
 src/ids_parser/detector.py       Nhận diện application protocol
 src/ids_parser/decoder.py        Decode dữ liệu application layer
 src/ids_parser/preprocessor.py   Validate và chuẩn hóa event
+src/ids_parser/flow.py           Theo dõi flow/connection
 src/ids_parser/parsers/         IPv4, TCP, UDP, HTTP, DNS và SMTP parsers
 src/ids_parser/writer.py        JSON Lines writer
 tests/                          Automated tests

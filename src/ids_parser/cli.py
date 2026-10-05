@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .capture import CaptureError, capture_live, list_interfaces, read_pcap
+from .flow import FlowTrackerConfig
 from .pipeline import PacketPipeline
 from .preprocessor import PreprocessConfig
 from .writer import JSONLinesWriter
@@ -19,6 +20,16 @@ def positive_integer(value: str) -> int:
     except ValueError as error:
         raise argparse.ArgumentTypeError("must be an integer") from error
     if parsed < 1:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
+def positive_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be a number") from error
+    if parsed <= 0:
         raise argparse.ArgumentTypeError("must be greater than zero")
     return parsed
 
@@ -69,6 +80,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=16 * 1024 * 1024,
         help="maximum accepted packet_length before preprocessing marks invalid",
     )
+    parser.add_argument(
+        "--flow-timeout",
+        type=positive_float,
+        default=60.0,
+        help="idle seconds before a flow is exported and removed (default: 60)",
+    )
     return parser
 
 
@@ -102,10 +119,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             unsupported_policy=args.unsupported_policy,
             max_packet_length=args.max_packet_length,
         )
+        flow_config = FlowTrackerConfig(idle_timeout_seconds=args.flow_timeout)
         with JSONLinesWriter(args.output) as writer:
             pipeline = PacketPipeline(
                 sink=writer.write,
                 preprocess_config=preprocess_config,
+                flow_config=flow_config,
             )
             if args.pcap is not None:
                 processed = read_pcap(args.pcap, pipeline, count=args.count)

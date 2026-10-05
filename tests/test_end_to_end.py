@@ -25,6 +25,8 @@ EVENT_KEYS = {
     "preprocess_status",
     "processing_action",
     "reason",
+    "flow",
+    "expired_flows",
 }
 
 

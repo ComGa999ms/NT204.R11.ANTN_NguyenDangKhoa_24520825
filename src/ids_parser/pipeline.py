@@ -9,6 +9,7 @@ from typing import Any
 
 from .decoder import decode_application
 from .detector import detect_application
+from .flow import FlowTracker, FlowTrackerConfig
 from .models import CaptureContext, NormalizedIDSEvent
 from .parsers.dns import parse_dns
 from .parsers.http import parse_http
@@ -38,14 +39,19 @@ class PacketPipeline:
         tcp_reassembler: TCPStreamReassembler | None = None,
         preprocessor: EventPreprocessor | None = None,
         preprocess_config: PreprocessConfig | None = None,
+        flow_tracker: FlowTracker | None = None,
+        flow_config: FlowTrackerConfig | None = None,
     ) -> None:
         if preprocessor is not None and preprocess_config is not None:
             raise ValueError("Use either preprocessor or preprocess_config, not both")
+        if flow_tracker is not None and flow_config is not None:
+            raise ValueError("Use either flow_tracker or flow_config, not both")
         self._sink = sink
         self._packet_id = 0
         self._id_lock = Lock()
         self._tcp_streams = tcp_reassembler or TCPStreamReassembler()
         self._preprocessor = preprocessor or EventPreprocessor(preprocess_config)
+        self._flow_tracker = flow_tracker or FlowTracker(flow_config)
 
     def _next_packet_id(self) -> int:
         with self._id_lock:
@@ -208,6 +214,9 @@ class PacketPipeline:
             errors=errors,
         ).to_dict()
         event = self._preprocessor.process(event)
+        flow_result = self._flow_tracker.process(event)
+        event["flow"] = flow_result["flow"]
+        event["expired_flows"] = flow_result["expired_flows"]
 
         if self._sink is not None and event["processing_action"] != "skip":
             self._sink(event)
