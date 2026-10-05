@@ -1,4 +1,15 @@
-"""Kiểm tra và chuẩn hóa event sau khi decode."""
+"""Kiểm tra và chuẩn hóa event sau khi decode.
+
+File này đứng giữa Decoder và Flow Tracker:
+
+1. Nhận event đã parse/decode từ ``pipeline.py``.
+2. Kiểm tra các field bắt buộc có hợp lệ không.
+3. Chuẩn hóa format để module sau đọc dễ hơn.
+4. Thêm metadata ``preprocess_status``, ``processing_action`` và ``reason``.
+
+Preprocessor không làm chương trình dừng khi event lỗi.
+Nó chỉ đánh dấu event là ``valid``, ``partial`` hoặc ``invalid``.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +29,7 @@ SUPPORTED_TRANSPORT_PROTOCOLS = {"TCP", "UDP"}
 SUPPORTED_NETWORK_PROTOCOLS = {"IPv4", "IPv6"}
 EVENT_STATUSES = {"captured", "parsed", "partial", "error"}
 PAYLOAD_ENCODINGS = {None, "utf-8", "hex"}
+# Chỉ decode các ký tự URI an toàn. Các ký tự đặc biệt như /, ?, & vẫn giữ dạng %XX.
 UNRESERVED_URI = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
 )
@@ -25,7 +37,12 @@ UNRESERVED_URI = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class PreprocessConfig:
-    """Cấu hình cách xử lý event lỗi hoặc chưa hỗ trợ."""
+    """Cấu hình cách xử lý event lỗi hoặc chưa hỗ trợ.
+
+    - ``invalid_policy``: event sai cấu trúc thì giữ lại để xem lỗi hoặc skip.
+    - ``unsupported_policy``: protocol chưa hỗ trợ thì giữ lại hoặc skip.
+    - ``max_packet_length``: giới hạn packet quá lớn để tránh dữ liệu bất thường.
+    """
 
     invalid_policy: PreprocessPolicy = "mark"
     unsupported_policy: PreprocessPolicy = "mark"
@@ -42,29 +59,42 @@ class PreprocessConfig:
 
 @dataclass(slots=True)
 class _Issues:
+    """Gom các vấn đề phát hiện được trong lúc chuẩn hóa."""
+
     invalid: list[str] = field(default_factory=list)
     partial: list[str] = field(default_factory=list)
     unsupported: list[str] = field(default_factory=list)
 
     def reason(self) -> str | None:
+        """Ghép các lỗi thành một chuỗi ngắn để ghi vào output."""
+
         messages = self.invalid + self.unsupported + self.partial
         return "; ".join(messages) if messages else None
 
 
 class EventPreprocessor:
-    """Kiểm tra và chuẩn hóa từng event đã giải mã."""
+    """Kiểm tra và chuẩn hóa từng event đã giải mã.
+
+    Hàm chính cần đọc là ``process()``. Các hàm bắt đầu bằng ``_normalize_*``
+    chỉ xử lý từng phần nhỏ của event.
+    """
 
     def __init__(self, config: PreprocessConfig | None = None) -> None:
         self._config = config or PreprocessConfig()
 
     def process(self, event: Mapping[str, Any] | Any) -> dict[str, Any]:
+        """Chuẩn hóa một event và thêm metadata cho bước xử lý tiếp theo."""
+
         issues = _Issues()
+
+        # Copy event để preprocessor không sửa object gốc bên ngoài.
         if isinstance(event, Mapping):
             normalized = deepcopy(dict(event))
         else:
             normalized = {}
             issues.invalid.append("Event must be a JSON object")
 
+        # Chuẩn hóa các field top-level. Mỗi hàm tự ghi lỗi vào ``issues``.
         normalized["packet_id"] = _coerce_positive_int(
             normalized.get("packet_id"), "packet_id", issues.invalid
         )
@@ -86,6 +116,7 @@ class EventPreprocessor:
         normalized["status"] = _normalize_status(normalized.get("status"), issues)
         normalized["errors"] = _normalize_errors(normalized.get("errors"), issues)
 
+        # Quyết định event sẽ được xử lý tiếp, đánh dấu lỗi, hay bỏ qua.
         if issues.invalid:
             preprocess_status = "invalid"
             action = "skip" if self._config.invalid_policy == "skip" else "mark"
@@ -101,19 +132,25 @@ class EventPreprocessor:
             preprocess_status = "valid"
             action = "process"
 
+        # Ba field này là kết quả chính của Preprocessor.
         normalized["preprocess_status"] = preprocess_status
         normalized["processing_action"] = action
         normalized["reason"] = issues.reason()
         return normalized
 
 
+# Nhóm hàm ``_coerce_*``: ép kiểu dữ liệu đơn giản và kiểm tra range.
 def _is_int(value: Any) -> bool:
+    """bool cũng là int trong Python, nên cần loại bool ra."""
+
     return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _coerce_positive_int(
     value: Any, field_name: str, invalid: list[str]
 ) -> int | None:
+    """Ép field thành số nguyên dương, dùng cho ``packet_id``."""
+
     if _is_int(value):
         parsed = value
     elif isinstance(value, str) and value.strip().isdigit():
@@ -130,6 +167,12 @@ def _coerce_positive_int(
 def _coerce_nonnegative_int(
     value: Any, field_name: str, issues: _Issues, *, required: bool = False
 ) -> int | None:
+    """Ép field thành số nguyên không âm.
+
+    Field bắt buộc lỗi sẽ vào ``invalid``.
+    Field optional bị thiếu chỉ vào ``partial``.
+    """
+
     if value is None:
         target = issues.invalid if required else issues.partial
         target.append(f"{field_name} is missing")
@@ -150,6 +193,8 @@ def _coerce_nonnegative_int(
 def _coerce_packet_length(
     value: Any, max_packet_length: int, issues: _Issues
 ) -> int | None:
+    """Kiểm tra packet length và giới hạn kích thước tối đa."""
+
     packet_length = _coerce_nonnegative_int(
         value, "packet_length", issues, required=True
     )
@@ -161,6 +206,8 @@ def _coerce_packet_length(
 
 
 def _coerce_port(value: Any, field_name: str, issues: _Issues) -> int | None:
+    """Chuẩn hóa port và kiểm tra range 0..65535."""
+
     port = _coerce_nonnegative_int(value, field_name, issues, required=True)
     if port is not None and port > 65535:
         issues.invalid.append(f"{field_name} must be between 0 and 65535")
@@ -169,6 +216,8 @@ def _coerce_port(value: Any, field_name: str, issues: _Issues) -> int | None:
 
 
 def _coerce_bool(value: Any) -> bool | None:
+    """Chấp nhận bool thật, chuỗi true/false hoặc số 0/1."""
+
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -183,6 +232,8 @@ def _coerce_bool(value: Any) -> bool | None:
 
 
 def _normalize_timestamp(value: Any, issues: _Issues) -> str | None:
+    """Chuẩn hóa timestamp về UTC dạng ``...Z``."""
+
     if not isinstance(value, str) or not value.strip():
         issues.invalid.append("timestamp is missing or not a string")
         return None
@@ -204,6 +255,8 @@ def _normalize_timestamp(value: Any, issues: _Issues) -> str | None:
 
 
 def _normalize_capture(value: Any, issues: _Issues) -> dict[str, Any]:
+    """Chuẩn hóa metadata nguồn capture: live hoặc pcap."""
+
     if not isinstance(value, Mapping):
         issues.partial.append("capture metadata is missing")
         return {"mode": None, "source": None}
@@ -227,6 +280,8 @@ def _normalize_capture(value: Any, issues: _Issues) -> dict[str, Any]:
 
 
 def _canonical_protocol(value: Any, aliases: Mapping[str, str]) -> str | None:
+    """Đổi protocol về tên chuẩn, ví dụ tcp -> TCP."""
+
     if not isinstance(value, str) or not value.strip():
         return None
     folded = value.strip().replace("-", "").replace("_", "").casefold()
@@ -234,6 +289,8 @@ def _canonical_protocol(value: Any, aliases: Mapping[str, str]) -> str | None:
 
 
 def _normalize_ip(value: Any, field_name: str, issues: _Issues) -> str | None:
+    """Kiểm tra IP hợp lệ và trả về dạng canonical."""
+
     if not isinstance(value, str) or not value.strip():
         issues.invalid.append(f"{field_name} is missing or not a string")
         return None
@@ -245,6 +302,8 @@ def _normalize_ip(value: Any, field_name: str, issues: _Issues) -> str | None:
 
 
 def _normalize_domain(value: Any) -> str | None:
+    """Chuẩn hóa domain: bỏ dấu chấm cuối và lower-case."""
+
     if value is None:
         return None
     if not isinstance(value, str):
@@ -254,6 +313,8 @@ def _normalize_domain(value: Any) -> str | None:
 
 
 def _normalize_host(value: Any) -> str | None:
+    """Chuẩn hóa HTTP Host, có hỗ trợ host kèm port."""
+
     text = _first_value(value)
     if text is None:
         return None
@@ -283,6 +344,8 @@ def _normalize_host(value: Any) -> str | None:
 
 
 def _first_value(value: Any) -> str | None:
+    """Lấy giá trị đầu tiên nếu field đang là list."""
+
     if isinstance(value, list):
         for item in value:
             if item is not None:
@@ -294,6 +357,14 @@ def _first_value(value: Any) -> str | None:
 
 
 def _normalize_network(value: Any, issues: _Issues) -> dict[str, Any] | None:
+    """Chuẩn hóa tầng network.
+
+    Yêu cầu chính:
+    - ``network`` phải là object.
+    - ``protocol`` phải thuộc IPv4/IPv6.
+    - Source/destination IP phải hợp lệ.
+    """
+
     if value is None:
         issues.partial.append("network layer is missing")
         return None
@@ -318,6 +389,12 @@ def _normalize_network(value: Any, issues: _Issues) -> dict[str, Any] | None:
 
 
 def _normalize_transport(value: Any, issues: _Issues) -> dict[str, Any] | None:
+    """Chuẩn hóa tầng transport.
+
+    Với TCP/UDP sẽ kiểm tra protocol, source port, destination port
+    và payload length. TCP có thêm phần flags/options.
+    """
+
     if value is None:
         issues.partial.append("transport layer is missing")
         return None
@@ -370,6 +447,14 @@ def _normalize_transport(value: Any, issues: _Issues) -> dict[str, Any] | None:
 
 
 def _normalize_payload(value: Any, issues: _Issues) -> dict[str, Any]:
+    """Chuẩn hóa payload chung của event.
+
+    Payload hợp lệ có 3 field:
+    - ``length``: số byte.
+    - ``encoding``: ``utf-8``, ``hex`` hoặc ``None``.
+    - ``data``: string hoặc ``None``.
+    """
+
     if not isinstance(value, Mapping):
         issues.partial.append("payload is missing")
         return {"length": 0, "encoding": None, "data": None}
@@ -398,11 +483,18 @@ def _normalize_payload(value: Any, issues: _Issues) -> dict[str, Any]:
 
 
 def _payload_has_data(payload: Mapping[str, Any]) -> bool:
+    """Kiểm tra payload có byte dữ liệu hay không."""
+
     length = payload.get("length")
     return _is_int(length) and length > 0
 
 
 def _normalize_headers(value: Any, issues: _Issues, label: str) -> dict[str, list[str]]:
+    """Chuẩn hóa header thành dict: tên header -> list giá trị.
+
+    Tên header được lower-case để tránh lệch kiểu ``Host`` và ``host``.
+    """
+
     if value is None:
         return {}
     if not isinstance(value, Mapping):
@@ -425,6 +517,8 @@ def _normalize_headers(value: Any, issues: _Issues, label: str) -> dict[str, lis
 
 
 def _normalize_content_type(value: Any) -> str | None:
+    """Chuẩn hóa content-type về lower-case."""
+
     text = _first_value(value)
     if text is None:
         return None
@@ -433,6 +527,12 @@ def _normalize_content_type(value: Any) -> str | None:
 
 
 def _normalize_percent_encoded(value: str) -> str:
+    """Chuẩn hóa percent-encoding trong URI.
+
+    Chỉ decode ký tự an toàn như chữ, số, ``-._~``.
+    Ký tự phân tách đường dẫn/query vẫn giữ dạng ``%XX`` để không làm đổi nghĩa URI.
+    """
+
     output: list[str] = []
     index = 0
     while index < len(value):
@@ -457,6 +557,8 @@ def _normalize_percent_encoded(value: str) -> str:
 
 
 def _normalize_uri_target(value: str) -> tuple[str, str | None]:
+    """Chuẩn hóa target/path HTTP nhưng không phá cấu trúc URI."""
+
     try:
         split = urlsplit(value)
     except ValueError:
@@ -470,11 +572,22 @@ def _normalize_uri_target(value: str) -> tuple[str, str | None]:
 
 
 def _first_header(headers: Mapping[str, list[str]], name: str) -> str | None:
+    """Lấy giá trị đầu tiên của một header."""
+
     values = headers.get(name)
     return values[0] if values else None
 
 
 def _normalize_http_fields(fields: dict[str, Any], issues: _Issues) -> dict[str, Any]:
+    """Chuẩn hóa field riêng của HTTP.
+
+    Các việc chính:
+    - Chuẩn hóa headers, host và content-type.
+    - Chuẩn hóa URI target/path an toàn.
+    - Bổ sung ``None`` cho field optional bị thiếu.
+    - Ép ``headers_complete`` và ``body_complete`` về bool nếu có thể.
+    """
+
     headers = _normalize_headers(fields.get("headers"), issues, "HTTP headers")
     fields["headers"] = headers
 
@@ -537,6 +650,11 @@ def _normalize_http_fields(fields: dict[str, Any], issues: _Issues) -> dict[str,
 def _normalize_dns_name_items(
     items: Any, issues: _Issues, label: str
 ) -> list[dict[str, Any]]:
+    """Chuẩn hóa danh sách record DNS.
+
+    Record thiếu hoặc sai dạng sẽ không làm crash, chỉ ghi ``partial``.
+    """
+
     if items is None:
         return []
     if not isinstance(items, list):
@@ -562,6 +680,8 @@ def _normalize_dns_name_items(
 
 
 def _normalize_dns_fields(fields: dict[str, Any], issues: _Issues) -> dict[str, Any]:
+    """Chuẩn hóa field DNS và đảm bảo các list record luôn tồn tại."""
+
     fields["questions"] = _normalize_dns_name_items(
         fields.get("questions"), issues, "DNS questions"
     )
@@ -585,6 +705,8 @@ def _normalize_dns_fields(fields: dict[str, Any], issues: _Issues) -> dict[str, 
 
 
 def _normalize_smtp_fields(fields: dict[str, Any], issues: _Issues) -> dict[str, Any]:
+    """Chuẩn hóa field SMTP command/response hoặc MIME."""
+
     fields["headers"] = _normalize_headers(
         fields.get("headers"), issues, "SMTP MIME headers"
     )
@@ -614,6 +736,12 @@ def _normalize_smtp_fields(fields: dict[str, Any], issues: _Issues) -> dict[str,
 def _normalize_application(
     value: Any, payload: Mapping[str, Any], issues: _Issues
 ) -> dict[str, Any]:
+    """Chuẩn hóa application layer.
+
+    Nếu là HTTP/DNS/SMTP thì gọi hàm normalize riêng.
+    Nếu protocol chưa hỗ trợ nhưng payload có dữ liệu thì đánh dấu ``unsupported``.
+    """
+
     if not isinstance(value, Mapping):
         issues.invalid.append("application must be an object")
         return {"protocol": "UNKNOWN", "fields": {}}
@@ -648,6 +776,8 @@ def _normalize_application(
 
 
 def _normalize_status(value: Any, issues: _Issues) -> str | None:
+    """Chuẩn hóa status của event về chữ thường."""
+
     if not isinstance(value, str):
         issues.invalid.append("status is missing or not a string")
         return None
@@ -659,6 +789,8 @@ def _normalize_status(value: Any, issues: _Issues) -> str | None:
 
 
 def _normalize_errors(value: Any, issues: _Issues) -> list[str]:
+    """Chuẩn hóa errors thành list string."""
+
     if value is None:
         return []
     if not isinstance(value, list):
