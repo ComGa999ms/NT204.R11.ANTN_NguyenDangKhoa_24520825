@@ -22,6 +22,9 @@ EVENT_KEYS = {
     "payload",
     "status",
     "errors",
+    "preprocess_status",
+    "processing_action",
+    "reason",
 }
 
 

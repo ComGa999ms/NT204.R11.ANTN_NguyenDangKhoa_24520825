@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .capture import CaptureError, capture_live, list_interfaces, read_pcap
 from .pipeline import PacketPipeline
+from .preprocessor import PreprocessConfig
 from .writer import JSONLinesWriter
 
 
@@ -50,6 +51,24 @@ def build_parser() -> argparse.ArgumentParser:
         dest="capture_filter",
         help="optional BPF filter for live capture, for example 'tcp port 80'",
     )
+    parser.add_argument(
+        "--invalid-policy",
+        choices=("mark", "skip"),
+        default="mark",
+        help="mark or skip structurally invalid events (default: mark)",
+    )
+    parser.add_argument(
+        "--unsupported-policy",
+        choices=("mark", "skip"),
+        default="mark",
+        help="mark or skip unsupported protocol events (default: mark)",
+    )
+    parser.add_argument(
+        "--max-packet-length",
+        type=positive_integer,
+        default=16 * 1024 * 1024,
+        help="maximum accepted packet_length before preprocessing marks invalid",
+    )
     return parser
 
 
@@ -78,8 +97,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--filter is only supported with --interface")
 
     try:
+        preprocess_config = PreprocessConfig(
+            invalid_policy=args.invalid_policy,
+            unsupported_policy=args.unsupported_policy,
+            max_packet_length=args.max_packet_length,
+        )
         with JSONLinesWriter(args.output) as writer:
-            pipeline = PacketPipeline(sink=writer.write)
+            pipeline = PacketPipeline(
+                sink=writer.write,
+                preprocess_config=preprocess_config,
+            )
             if args.pcap is not None:
                 processed = read_pcap(args.pcap, pipeline, count=args.count)
             else:

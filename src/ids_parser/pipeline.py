@@ -16,6 +16,7 @@ from .parsers.network import parse_ipv4
 from .parsers.payload import normalize_payload, payload_to_bytes
 from .parsers.smtp import parse_smtp
 from .parsers.transport import empty_payload, parse_transport
+from .preprocessor import EventPreprocessor, PreprocessConfig
 from .reassembly import FlowKey, TCPStreamReassembler
 
 
@@ -35,11 +36,16 @@ class PacketPipeline:
         sink: EventSink | None = None,
         *,
         tcp_reassembler: TCPStreamReassembler | None = None,
+        preprocessor: EventPreprocessor | None = None,
+        preprocess_config: PreprocessConfig | None = None,
     ) -> None:
+        if preprocessor is not None and preprocess_config is not None:
+            raise ValueError("Use either preprocessor or preprocess_config, not both")
         self._sink = sink
         self._packet_id = 0
         self._id_lock = Lock()
         self._tcp_streams = tcp_reassembler or TCPStreamReassembler()
+        self._preprocessor = preprocessor or EventPreprocessor(preprocess_config)
 
     def _next_packet_id(self) -> int:
         with self._id_lock:
@@ -201,7 +207,8 @@ class PacketPipeline:
             status=status,
             errors=errors,
         ).to_dict()
+        event = self._preprocessor.process(event)
 
-        if self._sink is not None:
+        if self._sink is not None and event["processing_action"] != "skip":
             self._sink(event)
         return event
