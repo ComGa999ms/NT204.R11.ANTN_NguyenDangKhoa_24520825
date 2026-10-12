@@ -6,6 +6,10 @@ TEST/udp/
   udp.pcap
   udp.jsonl
   README.md
+
+TEST/t05-preprocessor-normalization/
+  t05-preprocessor-normalization.jsonl
+  README.md
 """
 
 from __future__ import annotations
@@ -137,6 +141,25 @@ CASES = {
 }
 
 
+EVENT_CASES = {
+    "t05-preprocessor-normalization": {
+        "title": "T05 preprocessor normalization",
+        "goal": "Kiểm tra Preprocessor chuẩn hóa event đầu vào.",
+        "expect": "Output có timestamp, capture mode, protocol, IP/domain/header được chuẩn hóa.",
+    },
+    "t06-preprocessor-missing-fields": {
+        "title": "T06 preprocessor missing fields",
+        "goal": "Kiểm tra Preprocessor xử lý event thiếu field bắt buộc.",
+        "expect": "Output đánh dấu event lỗi là partial/invalid và ghi rõ lý do trong errors/reason.",
+    },
+    "t14-preprocessor-error-policy": {
+        "title": "T14 preprocessor error policy",
+        "goal": "Kiểm tra chính sách mark/skip khi gặp event lỗi hoặc protocol chưa hỗ trợ.",
+        "expect": "Output thể hiện đúng processing_action theo policy mark hoặc skip.",
+    },
+}
+
+
 def _readme_for_case(name: str, data: dict[str, str]) -> str:
     flow_timeout = (
         " --flow-timeout 10"
@@ -180,6 +203,43 @@ File `{name}.jsonl` trong folder này là kết quả mẫu tương ứng với 
 """
 
 
+def _readme_for_event_case(name: str, data: dict[str, str]) -> str:
+    return f"""# {data["title"]}
+
+## File trong folder
+
+- `{name}.jsonl`: output mẫu của test Preprocessor.
+- `README.md`: mô tả cách chạy và kết quả mong đợi của test này.
+
+## Mục đích
+
+{data["goal"]}
+
+## Cách chạy
+
+Chạy từ thư mục gốc của project:
+
+```powershell
+python scripts/generate_preprocessor_test_outputs.py
+```
+
+Lệnh trên sinh lại các output của nhóm Preprocessor.
+
+## Cách kiểm tra nhanh
+
+1. Mở `{name}.jsonl` để xem output mẫu.
+2. Đối chiếu các trường trong output với kết quả mong đợi bên dưới.
+
+## Kết quả mong đợi
+
+{data["expect"]}
+
+## Ghi chú
+
+Case này test trực tiếp event JSON của Preprocessor nên không có file PCAP.
+"""
+
+
 def main() -> int:
     for name, data in CASES.items():
         case_dir = TEST_DIR / name
@@ -203,6 +263,24 @@ def main() -> int:
             copy2(source_jsonl, destination_jsonl)
         (case_dir / "README.md").write_text(
             _readme_for_case(name, data),
+            encoding="utf-8",
+            newline="\n",
+        )
+
+    for name, data in EVENT_CASES.items():
+        case_dir = TEST_DIR / name
+        source_jsonl = TEST_DIR / f"{name}.jsonl"
+        destination_jsonl = case_dir / f"{name}.jsonl"
+        if not source_jsonl.exists() and destination_jsonl.exists():
+            source_jsonl = destination_jsonl
+        if not source_jsonl.exists():
+            raise FileNotFoundError(f"Missing JSONL: {source_jsonl}")
+
+        case_dir.mkdir(parents=True, exist_ok=True)
+        if source_jsonl.resolve() != destination_jsonl.resolve():
+            copy2(source_jsonl, destination_jsonl)
+        (case_dir / "README.md").write_text(
+            _readme_for_event_case(name, data),
             encoding="utf-8",
             newline="\n",
         )
