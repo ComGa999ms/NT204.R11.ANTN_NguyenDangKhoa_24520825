@@ -29,6 +29,30 @@ Chức năng hiện tại:
 Live/PCAP -> IPv4 -> TCP/UDP -> Reassembly -> Decoder -> Preprocessor -> Flow Tracker -> JSONL
 ```
 
+## Sơ đồ tổng thể
+
+```mermaid
+flowchart TD
+    A["Live capture / PCAP"] --> B["capture.py"]
+    B --> C["pipeline.py"]
+    C --> D["IPv4 parser"]
+    D --> E["TCP / UDP parser"]
+    E --> F["TCP reassembly"]
+    F --> G["Detect HTTP / DNS / SMTP"]
+    G --> H["Application parser"]
+    H --> I["decoder.py"]
+    I --> J["preprocessor.py"]
+    J --> K{"process / skip"}
+    K -->|process| L["flow.py"]
+    K -->|skip| M["Bỏ qua event lỗi"]
+    L --> N["writer.py"]
+    M --> N
+    N --> O["Output JSONL"]
+    O --> P["TEST/ten-test/"]
+```
+
+Khi trình bày, có thể đọc ngắn gọn theo flow: chương trình nhận packet từ live capture hoặc PCAP, đưa vào pipeline chung, parse lần lượt IPv4/TCP/UDP, nhận diện application như HTTP/DNS/SMTP, decode dữ liệu cần thiết, chuẩn hóa bằng Preprocessor, gom flow bằng Flow Tracker rồi ghi kết quả ra file `.jsonl`.
+
 ## Cài đặt
 
 Yêu cầu Python 3.10 trở lên. Live capture trên Windows cần Npcap và có thể cần chạy PowerShell bằng quyền Administrator.
