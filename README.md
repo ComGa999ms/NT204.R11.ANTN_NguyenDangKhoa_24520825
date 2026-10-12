@@ -33,25 +33,51 @@ Live/PCAP -> IPv4 -> TCP/UDP -> Reassembly -> Decoder -> Preprocessor -> Flow Tr
 
 ```mermaid
 flowchart TD
-    A["Live capture / PCAP"] --> B["capture.py"]
-    B --> C["pipeline.py"]
-    C --> D["IPv4 parser"]
-    D --> E["TCP / UDP parser"]
-    E --> F["TCP reassembly"]
-    F --> G["Detect HTTP / DNS / SMTP"]
-    G --> H["Application parser"]
-    H --> I["decoder.py"]
-    I --> J["preprocessor.py"]
-    J --> K{"process / skip"}
-    K -->|process| L["flow.py"]
-    K -->|skip| M["Bỏ qua event lỗi"]
-    L --> N["writer.py"]
-    M --> N
-    N --> O["Output JSONL"]
-    O --> P["TEST/ten-test/"]
-```
+    A["Người dùng chạy main.py"] --> B{"Chọn nguồn packet"}
+    B --> C["Live capture từ Wi-Fi/Ethernet"]
+    B --> D["Đọc file PCAP"]
+    C --> E["capture.py<br/>Scapy sniff"]
+    D --> F["capture.py<br/>Scapy rdpcap"]
+    E --> G["pipeline.py<br/>PacketPipeline"]
+    F --> G
 
-Khi trình bày, có thể đọc ngắn gọn theo flow: chương trình nhận packet từ live capture hoặc PCAP, đưa vào pipeline chung, parse lần lượt IPv4/TCP/UDP, nhận diện application như HTTP/DNS/SMTP, decode dữ liệu cần thiết, chuẩn hóa bằng Preprocessor, gom flow bằng Flow Tracker rồi ghi kết quả ra file `.jsonl`.
+    G --> H["Parse network layer<br/>IPv4"]
+    H --> I{"Transport protocol"}
+    I --> J["TCP parser"]
+    I --> K["UDP parser"]
+
+    J --> L["TCP stream reassembly<br/>gom các segment TCP"]
+    K --> M["Application detector"]
+    L --> M
+
+    M --> N{"Application protocol"}
+    N --> O["HTTP parser"]
+    N --> P["DNS parser"]
+    N --> Q["SMTP parser"]
+    N --> R["UNKNOWN"]
+
+    O --> S["decoder.py<br/>URL, form, HTML"]
+    P --> T["Giữ thông tin DNS<br/>query/answer"]
+    Q --> U["decoder.py<br/>SMTP MIME"]
+    R --> V["Giữ payload hoặc đánh dấu UNKNOWN"]
+
+    S --> W["preprocessor.py<br/>validate + chuẩn hóa"]
+    T --> W
+    U --> W
+    V --> W
+
+    W --> X{"Policy"}
+    X -->|process| Y["flow.py<br/>theo dõi flow hai chiều"]
+    X -->|skip| Z["Bỏ qua event lỗi/không hỗ trợ"]
+    Y --> AA["writer.py<br/>ghi JSON Lines"]
+    Z --> AA
+    AA --> AB["Output .jsonl"]
+
+    AB --> AC["TEST/ten-test/ten-test.jsonl"]
+    D --> AD["TEST/ten-test/ten-test.pcap"]
+    AC --> AE["README.md từng test<br/>mô tả cách chạy + kết quả mong đợi"]
+    AD --> AE
+```
 
 ## Cài đặt
 
