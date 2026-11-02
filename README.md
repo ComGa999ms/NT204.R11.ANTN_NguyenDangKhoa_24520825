@@ -27,60 +27,46 @@ Chức năng hiện tại:
 - Không để các module phía sau phụ thuộc trực tiếp vào Scapy packet.
 
 ```text
-Live/PCAP -> IPv4 -> TCP/UDP -> Reassembly -> Decoder -> Preprocessor -> Flow Tracker -> Rule Engine -> JSONL
+Live/PCAP -> Parse IPv4/TCP/UDP -> Reassembly (TCP) -> Application Parser
+          -> Decoder -> Preprocessor -> Flow Tracker -> Packet JSONL
+                                            |
+                                            +-- khi có --rules: Rule Engine
+                                                -> Detection JSONL nếu rule match
 ```
 
 ## Sơ đồ tổng thể
 
 ```mermaid
 flowchart TD
-    A["Người dùng chạy main.py"] --> B{"Chọn nguồn packet"}
-    B --> C["Live capture từ Wi-Fi/Ethernet"]
-    B --> D["Đọc file PCAP"]
-    C --> E["capture.py<br/>Scapy sniff"]
-    D --> F["capture.py<br/>Scapy rdpcap"]
-    E --> G["pipeline.py<br/>PacketPipeline"]
-    F --> G
-
-    G --> H["Parse network layer<br/>IPv4"]
-    H --> I{"Transport protocol"}
-    I --> J["TCP parser"]
-    I --> K["UDP parser"]
-
-    J --> L["TCP stream reassembly<br/>gom các segment TCP"]
-    K --> M["Application detector"]
-    L --> M
-
-    M --> N{"Application protocol"}
-    N --> O["HTTP parser"]
-    N --> P["DNS parser"]
-    N --> Q["SMTP parser"]
-    N --> R["UNKNOWN"]
-
-    O --> S["decoder.py<br/>URL, form, HTML"]
-    P --> T["Giữ thông tin DNS<br/>query/answer"]
-    Q --> U["decoder.py<br/>SMTP MIME"]
-    R --> V["Giữ payload hoặc đánh dấu UNKNOWN"]
-
-    S --> W["preprocessor.py<br/>validate + chuẩn hóa"]
+    A["main.py -> cli.py"] --> B{"Nguồn packet"}
+    B -->|Live| C["capture_live(): Scapy sniff"]
+    B -->|PCAP| D["read_pcap(): Scapy PcapReader"]
+    C --> E["pipeline.process_packet()"]
+    D --> E
+    E --> F["parse_ipv4()"]
+    F --> G{"TCP hay UDP?"}
+    G -->|TCP| H["parse_tcp() -> TCP reassembly"]
+    G -->|UDP| I["parse_udp()"]
+    H --> J["detect_application()"]
+    I --> J
+    J --> K["HTTP / DNS / SMTP parser hoặc UNKNOWN"]
+    K --> L["decode_application()"]
+    L --> M["NormalizedIDSEvent"]
+    M --> N["EventPreprocessor.process()"]
+    N --> Q["FlowTracker.process()"]
+    Q --> O{"processing_action"}
+    O -->|skip| P["Không ghi packet hoặc cảnh báo"]
+    O -->|process / mark| R{"Có --rules?"}
+    R -->|Không| S["Packet JSONL"]
+    R -->|Có| T["RuleEvaluationEngine"]
+    A -->|--rules| U["File .rules"]
+    U --> V["RuleLoader / RuleParser"]
+    V --> W["RuleRepository / Indexer"]
     T --> W
-    U --> W
-    V --> W
-
-    W --> X{"Policy"}
-    X -->|process| Y["flow.py<br/>theo dõi flow hai chiều"]
-    X -->|skip| Z["Bỏ qua event lỗi/không hỗ trợ"]
-    Y --> RULE["Core Engine<br/>lọc và match Snort rule"]
-    RULE --> DET["Detection Event Generator"]
-    DET --> ALERT["Cảnh báo .jsonl"]
-    RULE --> AA["writer.py<br/>ghi JSON Lines"]
-    Z --> AA
-    AA --> AB["Output .jsonl"]
-
-    AB --> AC["TEST/ten-test/ten-test.jsonl"]
-    D --> AD["TEST/ten-test/ten-test.pcap"]
-    AC --> AE["README.md từng test<br/>mô tả cách chạy + kết quả mong đợi"]
-    AD --> AE
+    W --> X["RuleMatchingEngine"]
+    X --> Y{"Rule match?"}
+    Y -->|Có| Z["Detection Event -> alerts JSONL"]
+    Y -->|Có hoặc không| S
 ```
 
 ## Cài đặt
@@ -104,37 +90,37 @@ python main.py --list-interfaces
 Đọc tối đa 10 packet từ PCAP:
 
 ```powershell
-python main.py --pcap challenge.pcap --count 10 --output TEST/pcap-capture.jsonl
+python main.py --pcap challenge.pcap --count 10 --output TEST/BT1/pcap-capture.jsonl
 ```
 
 Bắt 10 packet từ Wi-Fi:
 
 ```powershell
-python main.py --interface "Wi-Fi" --count 10 --output TEST/wifi-capture.jsonl
+python main.py --interface "Wi-Fi" --count 10 --output TEST/BT1/wifi-capture.jsonl
 ```
 
 Live capture với BPF filter:
 
 ```powershell
-python main.py --interface "Wi-Fi" --filter "tcp or udp" --count 20 --output TEST/filtered-capture.jsonl
+python main.py --interface "Wi-Fi" --filter "tcp or udp" --count 20 --output TEST/BT1/filtered-capture.jsonl
 ```
 
 Đổi cách xử lý event lỗi hoặc protocol chưa hỗ trợ:
 
 ```powershell
-python main.py --pcap challenge.pcap --unsupported-policy skip --invalid-policy mark --output TEST/pcap-capture.jsonl
+python main.py --pcap challenge.pcap --unsupported-policy skip --invalid-policy mark --output TEST/BT2/policy-capture.jsonl
 ```
 
 Đổi timeout cho flow:
 
 ```powershell
-python main.py --pcap challenge.pcap --flow-timeout 30 --output TEST/pcap-capture.jsonl
+python main.py --pcap challenge.pcap --flow-timeout 30 --output TEST/BT2/flow-capture.jsonl
 ```
 
 Demo Core Engine với hai rule khớp cùng một HTTP packet:
 
 ```powershell
-python main.py --pcap TEST/http-get/http-get.pcap --rules TEST/BT3/demo.rules --output TEST/BT3/packets.jsonl --alerts-output TEST/BT3/detections.jsonl
+python main.py --pcap TEST/BT1/http-get/http-get.pcap --rules TEST/BT3/demo.rules --output TEST/BT3/packets.jsonl --alerts-output TEST/BT3/detections.jsonl
 ```
 
 `--rules` có thể lặp lại để nạp nhiều file. `--disable-sid 300001` tắt một rule theo SID. Khi không có `--rules`, pipeline cũ chỉ ghi packet event. Khi có rule, packet event thêm `detections` và file cảnh báo chứa một Detection Event trên mỗi dòng. Rule lỗi hoặc keyword ngoài phạm vi được báo trên stderr; các rule hợp lệ còn lại vẫn chạy.
@@ -189,7 +175,7 @@ Mỗi dòng trong file output là một JSON object độc lập:
 }
 ```
 
-Object thực tế chứa thêm các trường chi tiết của IPv4, TCP hoặc UDP. `application.protocol` có thể là `HTTP`, `DNS`, `SMTP` hoặc `UNKNOWN`. Message chưa đủ dữ liệu được giữ trong TCP reassembly buffer và đánh dấu `partial`. Preprocessor có thể giữ event lỗi để xem lý do hoặc bỏ qua khi chọn policy `skip`. Flow timeout được xuất trong `expired_flows`.
+Object thực tế chứa thêm các trường chi tiết của IPv4, TCP hoặc UDP. `application.protocol` có thể là `HTTP`, `DNS`, `SMTP` hoặc `UNKNOWN`. Message chưa đủ dữ liệu được giữ trong TCP reassembly buffer và đánh dấu `partial`. Preprocessor có thể giữ event lỗi để xem lý do hoặc bỏ qua khi chọn policy `skip`. Flow timeout được xuất trong `expired_flows`. Khi chạy với `--rules`, packet event có thêm `detections`; mỗi rule match cũng được ghi thành một dòng riêng trong file `--alerts-output`.
 
 ## Kiểm thử
 
@@ -222,7 +208,9 @@ src/ids_parser/core_engine.py    Index, match, evaluate rule và tạo Detection
 src/ids_parser/parsers/         IPv4, TCP, UDP, HTTP, DNS và SMTP parsers
 src/ids_parser/writer.py        JSON Lines writer
 tests/                          Automated tests
-TEST/                           Kết quả test case
+TEST/BT1/                       PCAP và output Packet Capture/Parser
+TEST/BT2/                       Test Decoder/Preprocessor/Flow Tracker
+TEST/BT3/                       Rule demo, packet output và Detection Event
 ```
 
 ## Khai báo sử dụng AI
