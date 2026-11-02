@@ -120,7 +120,7 @@ python main.py --pcap challenge.pcap --flow-timeout 30 --output TEST/BT2/flow-ca
 Demo Core Engine với hai rule khớp cùng một HTTP packet:
 
 ```powershell
-python main.py --pcap TEST/BT1/http-get/http-get.pcap --rules TEST/BT3/demo.rules --output TEST/BT3/packets.jsonl --alerts-output TEST/BT3/detections.jsonl
+python main.py --pcap TEST/BT3/demo.pcap --rules TEST/BT3/demo.rules --output TEST/BT3/packets.jsonl --alerts-output TEST/BT3/detections.jsonl
 ```
 
 `--rules` có thể lặp lại để nạp nhiều file. `--disable-sid 300001` tắt một rule theo SID. Khi không có `--rules`, pipeline cũ chỉ ghi packet event. Khi có rule, packet event thêm `detections` và file cảnh báo chứa một Detection Event trên mỗi dòng. Rule lỗi hoặc keyword ngoài phạm vi được báo trên stderr; các rule hợp lệ còn lại vẫn chạy.
@@ -210,7 +210,7 @@ src/ids_parser/writer.py        JSON Lines writer
 tests/                          Automated tests
 TEST/BT1/                       PCAP và output Packet Capture/Parser
 TEST/BT2/                       Test Decoder/Preprocessor/Flow Tracker
-TEST/BT3/                       Rule demo, packet output và Detection Event
+TEST/BT3/                       PCAP demo, báo cáo kết quả, rule và Detection Event
 ```
 
 ## Khai báo sử dụng AI
