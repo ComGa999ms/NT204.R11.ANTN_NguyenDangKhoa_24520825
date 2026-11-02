@@ -55,6 +55,7 @@ class _FlowState:
     protocol: str
     endpoint_a: Endpoint
     endpoint_b: Endpoint
+    client_endpoint: Endpoint
     started_at: str
     started_epoch: float
     last_seen_at: str
@@ -98,11 +99,19 @@ class FlowTracker:
         flow = self._flows.get(flow_id)
         is_new = flow is None
         if flow is None:
+            flags = transport.get("flags") if isinstance((transport := event.get("transport")), Mapping) else {}
+            if isinstance(flags, Mapping) and flags.get("syn") and not flags.get("ack"):
+                client = source
+            elif source[1] != destination[1]:
+                client = source if source[1] > destination[1] else destination
+            else:
+                client = source
             flow = _FlowState(
                 flow_id=flow_id,
                 protocol=protocol,
                 endpoint_a=endpoint_a,
                 endpoint_b=endpoint_b,
+                client_endpoint=client,
                 started_at=now_text,
                 started_epoch=timestamp,
                 last_seen_at=now_text,
@@ -300,6 +309,10 @@ def _snapshot(
         "protocol": flow.protocol,
         "endpoint_a": _endpoint_dict(flow.endpoint_a),
         "endpoint_b": _endpoint_dict(flow.endpoint_b),
+        "client_endpoint": _endpoint_dict(flow.client_endpoint),
+        "server_endpoint": _endpoint_dict(
+            flow.endpoint_b if flow.client_endpoint == flow.endpoint_a else flow.endpoint_a
+        ),
         "direction": direction,
         "is_new": is_new,
         "expired": flow.expired,

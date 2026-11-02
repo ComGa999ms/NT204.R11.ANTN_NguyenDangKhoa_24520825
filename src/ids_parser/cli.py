@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import argparse
 import sys
+from contextlib import ExitStack
 from collections.abc import Sequence
 from pathlib import Path
 
 from .capture import CaptureError, capture_live, list_interfaces, read_pcap
+from .core_engine import RuleEvaluationEngine, RuleRepository
 from .flow import FlowTrackerConfig
 from .pipeline import PacketPipeline
 from .preprocessor import PreprocessConfig
+from .rules import RuleLoader
 from .writer import JSONLinesWriter
 
 
@@ -86,6 +89,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=60.0,
         help="idle seconds before a flow is exported and removed (default: 60)",
     )
+    parser.add_argument("--rules", type=Path, action="append", help="Snort .rules file; may be repeated")
+    parser.add_argument("--alerts-output", type=Path, help="Detection JSONL path (default: alerts.jsonl)")
+    parser.add_argument("--disable-sid", type=positive_integer, action="append", default=[], help="Disable a rule SID")
     return parser
 
 
@@ -112,6 +118,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("one of --interface or --pcap is required")
     if args.pcap is not None and args.capture_filter is not None:
         parser.error("--filter is only supported with --interface")
+    if args.alerts_output is not None and not args.rules:
+        parser.error("--alerts-output requires --rules")
 
     try:
         preprocess_config = PreprocessConfig(
@@ -120,11 +128,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_packet_length=args.max_packet_length,
         )
         flow_config = FlowTrackerConfig(idle_timeout_seconds=args.flow_timeout)
-        with JSONLinesWriter(args.output) as writer:
+        loaded = RuleLoader().load(args.rules or [], disabled_sids=args.disable_sid)
+        for warning in loaded.warnings:
+            print(f"rule {warning.status}: {warning.source}:{warning.line_number}: {warning.message}", file=sys.stderr)
+        if args.rules and not loaded.rules:
+            print("warning: no valid enabled rules loaded", file=sys.stderr)
+        alerts_path = args.alerts_output or Path("alerts.jsonl")
+        if args.rules and args.output.resolve() == alerts_path.resolve():
+            parser.error("--output and --alerts-output must differ")
+        if args.rules:
+            rule_paths = {path.resolve() for path in args.rules}
+            if args.output.resolve() in rule_paths or alerts_path.resolve() in rule_paths:
+                parser.error("output paths must differ from input .rules files")
+        with ExitStack() as stack:
+            writer = stack.enter_context(JSONLinesWriter(args.output))
+            alert_writer = stack.enter_context(JSONLinesWriter(alerts_path)) if args.rules else None
             pipeline = PacketPipeline(
                 sink=writer.write,
                 preprocess_config=preprocess_config,
                 flow_config=flow_config,
+                rule_engine=RuleEvaluationEngine(RuleRepository(loaded.rules)) if args.rules else None,
+                detection_sink=alert_writer.write if alert_writer is not None else None,
             )
             if args.pcap is not None:
                 processed = read_pcap(args.pcap, pipeline, count=args.count)

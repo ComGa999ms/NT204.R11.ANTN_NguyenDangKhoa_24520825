@@ -1,4 +1,4 @@
-"""Pipeline xử lý chung cho live traffic và file PCAP."""
+"""Common packet processing pipeline used by live traffic and PCAP files."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from threading import Lock
 from typing import Any
 
 from .decoder import decode_application
+from .core_engine import RuleEvaluationEngine
 from .detector import detect_application
 from .flow import FlowTracker, FlowTrackerConfig
 from .models import CaptureContext, NormalizedIDSEvent
@@ -25,10 +26,11 @@ EventSink = Callable[[dict[str, Any]], None]
 
 
 class PacketPipeline:
-    """Chuyển raw packet thành event chuẩn rồi gửi cho sink.
+    """Convert raw packets to normalized events and send them to a sink.
 
-    Nguồn capture không cần biết chi tiết parser.
-    Mọi bước parse đều nằm trong ``process_packet``.
+    Capture sources intentionally know nothing about individual protocol
+    parsers. IPv4, TCP, UDP, HTTP, DNS, and SMTP parsing all happens behind
+    ``process_packet``.
     """
 
     def __init__(
@@ -40,6 +42,8 @@ class PacketPipeline:
         preprocess_config: PreprocessConfig | None = None,
         flow_tracker: FlowTracker | None = None,
         flow_config: FlowTrackerConfig | None = None,
+        rule_engine: RuleEvaluationEngine | None = None,
+        detection_sink: EventSink | None = None,
     ) -> None:
         if preprocessor is not None and preprocess_config is not None:
             raise ValueError("Use either preprocessor or preprocess_config, not both")
@@ -51,6 +55,8 @@ class PacketPipeline:
         self._tcp_streams = tcp_reassembler or TCPStreamReassembler()
         self._preprocessor = preprocessor or EventPreprocessor(preprocess_config)
         self._flow_tracker = flow_tracker or FlowTracker(flow_config)
+        self._rule_engine = rule_engine
+        self._detection_sink = detection_sink
 
     def _next_packet_id(self) -> int:
         with self._id_lock:
@@ -66,8 +72,9 @@ class PacketPipeline:
                 unix_timestamp, tz=timezone.utc
             ).isoformat(timespec="microseconds")
         except Exception:
-            # Metadata packet có thể lỗi tùy thư viện capture.
-            # Nếu lỗi thì dùng thời gian hiện tại và tiếp tục xử lý.
+            # Raw capture adapters can expose malformed metadata through
+            # library-specific exceptions. Metadata failure must not stop the
+            # packet stream.
             timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
             errors.append("Packet timestamp was unavailable; capture time was used")
         return timestamp.replace("+00:00", "Z"), errors
@@ -100,7 +107,7 @@ class PacketPipeline:
     def process_packet(
         self, packet: Any, context: CaptureContext
     ) -> dict[str, Any]:
-        """Xử lý một packet và trả về event chuẩn hóa."""
+        """Normalize one packet and forward it to the configured sink."""
 
         timestamp, timestamp_errors = self._packet_timestamp(packet)
         packet_length, length_errors = self._packet_length(packet)
@@ -215,6 +222,15 @@ class PacketPipeline:
         flow_result = self._flow_tracker.process(event)
         event["flow"] = flow_result["flow"]
         event["expired_flows"] = flow_result["expired_flows"]
+
+        if self._rule_engine is not None:
+            detections = self._rule_engine.evaluate(
+                event, stream_data=application_raw if application_raw else None
+            )
+            event["detections"] = detections
+            if self._detection_sink is not None:
+                for detection in detections:
+                    self._detection_sink(detection)
 
         if self._sink is not None and event["processing_action"] != "skip":
             self._sink(event)
