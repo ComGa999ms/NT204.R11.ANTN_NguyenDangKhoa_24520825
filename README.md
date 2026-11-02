@@ -5,7 +5,7 @@
 - Họ và tên: Nguyễn Đăng Khoa
 - MSSV: 24520825
 - Lớp: NT204.R11.ANTN
-- Bài tập 1 + 2: Packet Capture, Parser, Decoder, Preprocessor và Flow Tracker cho hệ thống IDS
+- Bài tập 1-3: Packet Capture, Parser, Decoder, Preprocessor, Flow Tracker và Core Engine cho hệ thống IDS
 
 ## Giới thiệu
 
@@ -21,12 +21,13 @@ Chức năng hiện tại:
 - Decode HTTP URL/form/HTML và SMTP MIME cơ bản.
 - Preprocessor kiểm tra field bắt buộc, chuẩn hóa IP/protocol/domain/header/timestamp và đánh dấu event `valid`, `partial` hoặc `invalid`.
 - Flow Tracker gom packet hai chiều vào cùng `flow_id`, theo dõi TCP state, thống kê packet/byte và timeout flow.
+- Core Engine đọc Snort `.rules`, lọc rule theo header, so khớp packet/flow/content và sinh Detection Event.
 - Chuẩn hóa TCP flags, header và payload.
 - Lưu payload dạng UTF-8 hoặc hex nếu không decode được.
 - Không để các module phía sau phụ thuộc trực tiếp vào Scapy packet.
 
 ```text
-Live/PCAP -> IPv4 -> TCP/UDP -> Reassembly -> Decoder -> Preprocessor -> Flow Tracker -> JSONL
+Live/PCAP -> IPv4 -> TCP/UDP -> Reassembly -> Decoder -> Preprocessor -> Flow Tracker -> Rule Engine -> JSONL
 ```
 
 ## Sơ đồ tổng thể
@@ -69,7 +70,10 @@ flowchart TD
     W --> X{"Policy"}
     X -->|process| Y["flow.py<br/>theo dõi flow hai chiều"]
     X -->|skip| Z["Bỏ qua event lỗi/không hỗ trợ"]
-    Y --> AA["writer.py<br/>ghi JSON Lines"]
+    Y --> RULE["Core Engine<br/>lọc và match Snort rule"]
+    RULE --> DET["Detection Event Generator"]
+    DET --> ALERT["Cảnh báo .jsonl"]
+    RULE --> AA["writer.py<br/>ghi JSON Lines"]
     Z --> AA
     AA --> AB["Output .jsonl"]
 
@@ -126,6 +130,16 @@ python main.py --pcap challenge.pcap --unsupported-policy skip --invalid-policy 
 ```powershell
 python main.py --pcap challenge.pcap --flow-timeout 30 --output TEST/pcap-capture.jsonl
 ```
+
+Demo Core Engine với hai rule khớp cùng một HTTP packet:
+
+```powershell
+python main.py --pcap TEST/http-get/http-get.pcap --rules TEST/BT3/demo.rules --output TEST/BT3/packets.jsonl --alerts-output TEST/BT3/detections.jsonl
+```
+
+`--rules` có thể lặp lại để nạp nhiều file. `--disable-sid 300001` tắt một rule theo SID. Khi không có `--rules`, pipeline cũ chỉ ghi packet event. Khi có rule, packet event thêm `detections` và file cảnh báo chứa một Detection Event trên mỗi dòng. Rule lỗi hoặc keyword ngoài phạm vi được báo trên stderr; các rule hợp lệ còn lại vẫn chạy.
+
+Core Engine hiện hỗ trợ `alert` với TCP/UDP, IPv4/CIDR, port đơn/range/`any`, `->`/`<>`, `msg`, `sid`, `rev`, `content`, `nocase`, `offset`, `depth`, `distance`, `within`, `flags`, `dsize`, `flow`, `classtype`, `priority`. `content` dùng bytes TCP đã ghép hoặc UDP payload; chỉ dùng field ứng dụng đã parse khi payload không có. TLS decryption, `pcre` và các keyword ngoài phạm vi bài không được hỗ trợ.
 
 Xem toàn bộ tùy chọn:
 
@@ -189,7 +203,7 @@ Chạy chi tiết:
 python -m pytest -v
 ```
 
-Các test hiện bao phủ capture, IPv4, TCP/UDP, stream reassembly, HTTP, DNS, SMTP, decoder, preprocessor, flow tracker và pipeline integration.
+Các test hiện bao phủ capture, IPv4, TCP/UDP, stream reassembly, HTTP, DNS, SMTP, decoder, preprocessor, flow tracker, rule parser/loader, matching và pipeline integration.
 
 ## Cấu trúc chính
 
@@ -203,6 +217,8 @@ src/ids_parser/detector.py       Nhận diện application protocol
 src/ids_parser/decoder.py        Decode dữ liệu application layer
 src/ids_parser/preprocessor.py   Validate và chuẩn hóa event
 src/ids_parser/flow.py           Theo dõi flow/connection
+src/ids_parser/rules.py          Đọc, parse và validate Snort rule
+src/ids_parser/core_engine.py    Index, match, evaluate rule và tạo Detection Event
 src/ids_parser/parsers/         IPv4, TCP, UDP, HTTP, DNS và SMTP parsers
 src/ids_parser/writer.py        JSON Lines writer
 tests/                          Automated tests
@@ -212,5 +228,5 @@ TEST/                           Kết quả test case
 ## Khai báo sử dụng AI
 
 - Công cụ: OpenAI Codex 5.6 Sol.
-- AI hỗ trợ 70%: xây dựng parser, pipeline, TCP reassembly, test case và tài liệu.
+- AI hỗ trợ 70%: xây dựng parser, pipeline, TCP reassembly, Core Engine Bài tập 3, test case và tài liệu.
 - Sinh viên 30%: phân tích yêu cầu, chạy thử live/PCAP, kiểm tra kết quả, chỉnh sửa, commit và push mã nguồn.

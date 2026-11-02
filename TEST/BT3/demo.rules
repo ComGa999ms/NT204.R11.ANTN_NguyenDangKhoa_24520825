@@ -1,0 +1,3 @@
+# Local rules for the BT3 demonstration.
+alert tcp any any -> any 18080 (msg:"HTTP GET request"; sid:300001; rev:1; content:"GET";)
+alert tcp any any -> any 18080 (msg:"HTTP index path"; sid:300002; rev:1; content:"/index";)
