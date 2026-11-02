@@ -146,10 +146,6 @@ class RuleLoadResult:
     disabled_sids: list[int] = field(default_factory=list)
 
 
-class _UnsupportedValue(ValueError):
-    pass
-
-
 class RuleParser:
     """Parse and validate the supported subset of Snort rule syntax."""
 
@@ -353,15 +349,15 @@ class RuleParser:
                 if current_content is None:
                     issues.append(_issue(f"{name} must follow content", source, line_number, raw))
                     continue
+                if name in {"distance", "within"} and len(values["content"]) < 2:
+                    issues.append(_issue(f"{name} requires a previous content", source, line_number, raw))
+                    continue
                 parsed = _parse_nonnegative_int(value, name, source, line_number, raw, issues)
                 if parsed is not None:
                     setattr(current_content, name, parsed)
                 continue
 
             if name == "content":
-                if name in seen and not isinstance(values["content"], list):
-                    issues.append(_issue("Invalid content option state", source, line_number, raw))
-                    continue
                 try:
                     pattern = _parse_content(value)
                 except ValueError as error:
@@ -409,14 +405,24 @@ class RuleParser:
                         )
                     )
                     continue
+                if ("to_server" in flow_values and "to_client" in flow_values) or (
+                    "established" in flow_values and "not_established" in flow_values
+                ):
+                    issues.append(_issue("Contradictory flow values", source, line_number, raw))
+                    continue
                 values[name] = list(flow_values)
             elif name == "flags":
                 if protocol != "tcp":
                     issues.append(_issue("flags is only valid for TCP rules", source, line_number, raw))
                     continue
-                values[name] = value
+                if not re.fullmatch(r"[SAFRPU]+", value.upper()) or len(set(value.upper())) != len(value):
+                    issues.append(_issue("Unsupported TCP flags expression", source, line_number, raw, status="unsupported"))
+                    continue
+                values[name] = value.upper()
             elif name == "dsize":
-                if not DSIZE_PATTERN.fullmatch(value):
+                if not DSIZE_PATTERN.fullmatch(value) or (
+                    "<>" in value and int(value.split("<>", 1)[0]) >= int(value.split("<>", 1)[1])
+                ):
                     issues.append(_issue(f"Invalid dsize expression: {value}", source, line_number, raw))
                     continue
                 values[name] = value
