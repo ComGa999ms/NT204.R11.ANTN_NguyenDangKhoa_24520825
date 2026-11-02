@@ -21,10 +21,11 @@ from ids_parser.pipeline import PacketPipeline  # noqa: E402
 from ids_parser.preprocessor import EventPreprocessor, PreprocessConfig  # noqa: E402
 
 
-TEST_DIRECTORY = PROJECT_ROOT / "TEST"
+TEST_DIRECTORY = PROJECT_ROOT / "TEST" / "BT2"
 
 
 def _write_jsonl(path: Path, events: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "".join(
             f"{json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n"
@@ -187,16 +188,16 @@ def t14_events() -> list[dict[str, Any]]:
 
 
 def main() -> int:
-    TEST_DIRECTORY.mkdir(exist_ok=True)
+    TEST_DIRECTORY.mkdir(parents=True, exist_ok=True)
     _write_jsonl(
-        TEST_DIRECTORY / "t05-preprocessor-normalization.jsonl",
+        TEST_DIRECTORY / "t05-preprocessor-normalization" / "t05-preprocessor-normalization.jsonl",
         [EventPreprocessor().process(t05_event())],
     )
     _write_jsonl(
-        TEST_DIRECTORY / "t06-preprocessor-missing-fields.jsonl",
+        TEST_DIRECTORY / "t06-preprocessor-missing-fields" / "t06-preprocessor-missing-fields.jsonl",
         [EventPreprocessor().process(event) for event in t06_events()],
     )
-    _write_jsonl(TEST_DIRECTORY / "t14-preprocessor-error-policy.jsonl", t14_events())
+    _write_jsonl(TEST_DIRECTORY / "t14-preprocessor-error-policy" / "t14-preprocessor-error-policy.jsonl", t14_events())
     return 0
 
 

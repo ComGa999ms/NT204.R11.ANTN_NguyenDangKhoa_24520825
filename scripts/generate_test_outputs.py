@@ -219,8 +219,11 @@ def generate() -> None:
     TEST_DIRECTORY.mkdir(parents=True, exist_ok=True)
 
     for name, packets in cases.items():
-        pcap_path = TEST_DIRECTORY / f"{name}.pcap"
-        output_path = TEST_DIRECTORY / f"{name}.jsonl"
+        assignment = "BT2" if name.startswith("t") else "BT1"
+        case_directory = TEST_DIRECTORY / assignment / name
+        case_directory.mkdir(parents=True, exist_ok=True)
+        pcap_path = case_directory / f"{name}.pcap"
+        output_path = case_directory / f"{name}.jsonl"
         wrpcap(str(pcap_path), packets)
 
         events: list[dict] = []

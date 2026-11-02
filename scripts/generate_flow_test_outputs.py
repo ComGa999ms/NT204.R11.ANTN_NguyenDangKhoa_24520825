@@ -9,6 +9,7 @@ from typing import Any
 
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.packet import Packet, Raw
+from scapy.utils import wrpcap
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -22,10 +23,11 @@ from ids_parser.pipeline import PacketPipeline  # noqa: E402
 from ids_parser.preprocessor import PreprocessConfig  # noqa: E402
 
 
-TEST_DIRECTORY = PROJECT_ROOT / "TEST"
+TEST_DIRECTORY = PROJECT_ROOT / "TEST" / "BT2"
 
 
 def _write_jsonl(path: Path, events: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "".join(
             f"{json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n"
@@ -46,6 +48,10 @@ def _run_packets(
     events: list[dict[str, Any]] = []
     for index, packet in enumerate(packets):
         packet.time = 1_700_000_000 + index
+    case_directory = TEST_DIRECTORY / Path(source).stem
+    case_directory.mkdir(parents=True, exist_ok=True)
+    wrpcap(str(case_directory / source), packets)
+    for packet in packets:
         events.append(pipeline.process_packet(packet, context))
     return events
 
@@ -58,7 +64,7 @@ def t07() -> list[dict[str, Any]]:
             IP(src="10.0.0.2", dst="10.0.0.1")
             / TCP(sport=80, dport=50000, seq=900, ack=101, flags="SA"),
         ],
-        "t07-flow-id.pcap",
+        "t07-flow-bidirectional-id.pcap",
     )
 
 
@@ -76,7 +82,7 @@ def t08() -> list[dict[str, Any]]:
             IP(src="10.0.0.2", dst="10.0.0.1")
             / TCP(sport=80, dport=50000, seq=901, ack=102, flags="FA"),
         ],
-        "t08-tcp-state.pcap",
+        "t08-tcp-connection-states.pcap",
     )
 
 
@@ -90,7 +96,7 @@ def t09() -> list[dict[str, Any]]:
             / UDP(sport=53, dport=53000)
             / Raw(b"answer"),
         ],
-        "t09-udp-flow.pcap",
+        "t09-udp-flow-tracking.pcap",
     )
 
 
@@ -104,7 +110,7 @@ def t10() -> list[dict[str, Any]]:
             / TCP(sport=8080, dport=50000, seq=1, ack=6, flags="PA")
             / Raw(b"world!!"),
         ],
-        "t10-flow-stats.pcap",
+        "t10-flow-statistics.pcap",
     )
 
 
@@ -138,29 +144,20 @@ def _timeout_event(
 
 
 def t11() -> list[dict[str, Any]]:
-    tracker = FlowTracker(FlowTrackerConfig(idle_timeout_seconds=10))
-    return [
-        tracker.process(
-            _timeout_event(
-                1,
-                "2024-01-01T00:00:00Z",
-                "10.0.0.1",
-                50000,
-                "10.0.0.2",
-                80,
-            )
-        ),
-        tracker.process(
-            _timeout_event(
-                2,
-                "2024-01-01T00:00:11Z",
-                "10.0.0.3",
-                50001,
-                "10.0.0.4",
-                443,
-            )
-        ),
+    packets = [
+        IP(src="10.0.0.1", dst="10.0.0.2")
+        / TCP(sport=50000, dport=80, seq=100, flags="S"),
+        IP(src="10.0.0.3", dst="10.0.0.4")
+        / TCP(sport=50001, dport=443, seq=200, flags="S"),
     ]
+    packets[0].time = 1_700_000_000
+    packets[1].time = 1_700_000_011
+    case_directory = TEST_DIRECTORY / "t11-flow-timeout-export"
+    case_directory.mkdir(parents=True, exist_ok=True)
+    wrpcap(str(case_directory / "t11-flow-timeout-export.pcap"), packets)
+    pipeline = PacketPipeline(flow_config=FlowTrackerConfig(idle_timeout_seconds=10))
+    context = CaptureContext(mode="pcap", source="t11-flow-timeout-export.pcap")
+    return [pipeline.process_packet(packet, context) for packet in packets]
 
 
 def t12() -> list[dict[str, Any]]:
@@ -172,8 +169,11 @@ def t12() -> list[dict[str, Any]]:
     ]
     packets[0].time = 1_700_000_000
     packets[1].time = 1_700_000_010
+    case_directory = TEST_DIRECTORY / "t12-pipeline-flow-metadata"
+    case_directory.mkdir(parents=True, exist_ok=True)
+    wrpcap(str(case_directory / "t12-pipeline-flow-metadata.pcap"), packets)
     pipeline = PacketPipeline(flow_config=FlowTrackerConfig(idle_timeout_seconds=5))
-    context = CaptureContext(mode="pcap", source="t12-flow-timeout.pcap")
+    context = CaptureContext(mode="pcap", source="t12-pipeline-flow-metadata.pcap")
     return [pipeline.process_packet(packet, context) for packet in packets]
 
 
@@ -190,7 +190,7 @@ def t13() -> list[dict[str, Any]]:
     pipeline = PacketPipeline(
         preprocess_config=PreprocessConfig(unsupported_policy="skip")
     )
-    context = CaptureContext(mode="pcap", source="t13-skip-flow.pcap")
+    context = CaptureContext(mode="pcap", source="t13-flow-error-handling.pcap")
     unsupported_packet = (
         IP(src="192.0.2.10", dst="198.51.100.20")
         / UDP(sport=40000, dport=40001)
@@ -202,6 +202,12 @@ def t13() -> list[dict[str, Any]]:
     )
     unsupported_packet.time = 1_700_000_000
     valid_packet.time = 1_700_000_001
+    case_directory = TEST_DIRECTORY / "t13-flow-error-handling"
+    case_directory.mkdir(parents=True, exist_ok=True)
+    wrpcap(
+        str(case_directory / "t13-flow-error-handling.pcap"),
+        [unsupported_packet, valid_packet],
+    )
     return [
         malformed,
         pipeline.process_packet(unsupported_packet, context),
@@ -210,7 +216,7 @@ def t13() -> list[dict[str, Any]]:
 
 
 def main() -> int:
-    TEST_DIRECTORY.mkdir(exist_ok=True)
+    TEST_DIRECTORY.mkdir(parents=True, exist_ok=True)
     cases = {
         "t07-flow-bidirectional-id.jsonl": t07(),
         "t08-tcp-connection-states.jsonl": t08(),
@@ -221,7 +227,7 @@ def main() -> int:
         "t13-flow-error-handling.jsonl": t13(),
     }
     for filename, events in cases.items():
-        _write_jsonl(TEST_DIRECTORY / filename, events)
+        _write_jsonl(TEST_DIRECTORY / Path(filename).stem / filename, events)
     return 0
 
 

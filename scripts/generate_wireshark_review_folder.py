@@ -2,12 +2,12 @@
 
 Ví dụ:
 
-TEST/udp/
+TEST/BT1/udp/
   udp.pcap
   udp.jsonl
   README.md
 
-TEST/t05-preprocessor-normalization/
+TEST/BT2/t05-preprocessor-normalization/
   t05-preprocessor-normalization.jsonl
   README.md
 """
@@ -20,6 +20,10 @@ from shutil import copy2
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TEST_DIR = PROJECT_ROOT / "TEST"
+
+
+def _assignment(name: str) -> str:
+    return "BT2" if name.startswith("t") else "BT1"
 
 
 CASES = {
@@ -161,6 +165,7 @@ EVENT_CASES = {
 
 
 def _readme_for_case(name: str, data: dict[str, str]) -> str:
+    assignment = _assignment(name)
     flow_timeout = (
         " --flow-timeout 10"
         if name in {"t11-flow-timeout-export", "t12-pipeline-flow-metadata"}
@@ -183,12 +188,12 @@ def _readme_for_case(name: str, data: dict[str, str]) -> str:
 Chạy từ thư mục gốc của project:
 
 ```powershell
-python main.py --pcap TEST/{name}/{name}.pcap{flow_timeout} --output TEST/{name}/output.jsonl
+python main.py --pcap TEST/{assignment}/{name}/{name}.pcap{flow_timeout} --output TEST/{assignment}/{name}/output.jsonl
 ```
 
 ## Cách kiểm tra nhanh
 
-1. Mở `TEST/{name}/{name}.pcap` bằng Wireshark để xem packet gốc.
+1. Mở `TEST/{assignment}/{name}/{name}.pcap` bằng Wireshark để xem packet gốc.
 2. Mở `{name}.jsonl` để xem output mẫu đã chạy sẵn.
 3. Nếu muốn chạy lại, dùng lệnh ở trên để sinh thêm `output.jsonl`.
 4. Đối chiếu output với kết quả mong đợi bên dưới.
@@ -242,7 +247,7 @@ Case này test trực tiếp event JSON của Preprocessor nên không có file 
 
 def main() -> int:
     for name, data in CASES.items():
-        case_dir = TEST_DIR / name
+        case_dir = TEST_DIR / _assignment(name) / name
         source_pcap = TEST_DIR / f"{name}.pcap"
         source_jsonl = TEST_DIR / f"{name}.jsonl"
         destination_pcap = case_dir / f"{name}.pcap"
@@ -268,7 +273,7 @@ def main() -> int:
         )
 
     for name, data in EVENT_CASES.items():
-        case_dir = TEST_DIR / name
+        case_dir = TEST_DIR / _assignment(name) / name
         source_jsonl = TEST_DIR / f"{name}.jsonl"
         destination_jsonl = case_dir / f"{name}.jsonl"
         if not source_jsonl.exists() and destination_jsonl.exists():

@@ -3,7 +3,7 @@
 Run from the repository root:
 
 ```powershell
-python main.py --pcap TEST/http-get/http-get.pcap --rules TEST/BT3/demo.rules --output TEST/BT3/packets.jsonl --alerts-output TEST/BT3/detections.jsonl
+python main.py --pcap TEST/BT1/http-get/http-get.pcap --rules TEST/BT3/demo.rules --output TEST/BT3/packets.jsonl --alerts-output TEST/BT3/detections.jsonl
 ```
 
 The packet output contains `detections`; the detection output has two lines, one for each matching SID (300001 and 300002). The loader reports invalid and unsupported rules to stderr and continues processing. `--rules` can be repeated for multiple files, and `--disable-sid 300001` excludes one rule. `flow:to_server`/`to_client` use the first SYN packet to identify the client when available; without a SYN, the higher port is assumed to be the client port.
